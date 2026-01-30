@@ -9,6 +9,8 @@ DrivoR: an end-to-end driving model by driving on registers.
 [**Project**](https://valeoai.github.io/driving-on-registers/) |
 [**Paper**](https://arxiv.org/abs/2601.05083)
 
+
+:sparkles:  Updates: we provide the [scaling](https://github.com/valeoai/DrivoR/edit/main/README.md#scaling-with-drivor) experiments and checkpoints.
 # Data and weights
 
 Please download the navsim organize the generated data in the same way as [HERE](https://github.com/autonomousvision/navsim/blob/main/docs/install.md).
