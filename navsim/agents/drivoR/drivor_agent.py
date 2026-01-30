@@ -103,6 +103,21 @@ class DrivoRAgent(AbstractAgent):
             from .score_module.compute_navsim_score import get_scores
 
             metric_cache = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_cache"))
+            # add synthetic metric_cache
+            metric_cache_synthetic_0 = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_synthetic_reaction_pdm_v1.0-0"))
+            metric_cache_synthetic_1 = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_synthetic_reaction_pdm_v1.0-1"))
+            metric_cache_synthetic_2 = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_synthetic_reaction_pdm_v1.0-2"))
+            metric_cache_synthetic_3 = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_synthetic_reaction_pdm_v1.0-3"))
+            metric_cache_synthetic_4 = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_synthetic_reaction_pdm_v1.0-4"))
+
+            self.train_metric_cache_paths_synthetic = metric_cache_synthetic_0.metric_cache_paths
+            self.train_metric_cache_paths_synthetic.update(metric_cache_synthetic_0.metric_cache_paths)
+            self.train_metric_cache_paths_synthetic.update(metric_cache_synthetic_1.metric_cache_paths)
+            self.train_metric_cache_paths_synthetic.update(metric_cache_synthetic_2.metric_cache_paths)
+            self.train_metric_cache_paths_synthetic.update(metric_cache_synthetic_3.metric_cache_paths)
+            self.train_metric_cache_paths_synthetic.update(metric_cache_synthetic_4.metric_cache_paths)
+
+            self.test_metric_cache_paths_synthetic = self.train_metric_cache_paths_synthetic
             self.train_metric_cache_paths = metric_cache.metric_cache_paths
             self.test_metric_cache_paths = metric_cache.metric_cache_paths
 
@@ -164,8 +179,10 @@ class DrivoRAgent(AbstractAgent):
     def compute_score(self, targets, proposals, test=True):
         if self.training:
             metric_cache_paths = self.train_metric_cache_paths
+            metric_cache_paths_synthetic = self.train_metric_cache_paths_synthetic
         else:
             metric_cache_paths = self.test_metric_cache_paths
+            metric_cache_paths_synthetic = self.test_metric_cache_paths_synthetic
 
         target_trajectory = targets["trajectory"]
         proposals=proposals.detach()
@@ -173,7 +190,7 @@ class DrivoRAgent(AbstractAgent):
         
         data_points = [
             {
-                "token": metric_cache_paths[token],
+                "token": metric_cache_paths[token] if token in metric_cache_paths else metric_cache_paths_synthetic[token],
                 "poses": poses,
                 "test": test
             }

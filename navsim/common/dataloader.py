@@ -6,6 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 import pickle
 import lzma
+import yaml
 
 from navsim.common.dataclasses import AgentInput, Scene, SceneFilter, SensorConfig
 from navsim.planning.metric_caching.metric_cache import MetricCache
@@ -66,6 +67,89 @@ def filter_scenes(data_path: Path, scene_filter: SceneFilter) -> Dict[str, List[
     return filtered_scenes
 
 
+def filter_scenes_synthetic(data_path: Path, scene_filter: SceneFilter, sensor_blobs_path: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Load a set of scenes from dataset, while applying scene filter configuration.
+    :param data_path: root directory of log folder
+    :param scene_filter: scene filtering configuration class
+    :return: dictionary of raw logs format
+    """
+
+    def split_list(input_list: List[Any], num_frames: int, frame_interval: int) -> List[List[Any]]:
+        """Helper function to split frame list according to sampling specification."""
+        return [input_list[i : i + num_frames] for i in range(0, len(input_list), frame_interval)]
+
+    filtered_scenes: Dict[str, Scene] = {}
+    stop_loading: bool = False
+    if sensor_blobs_path is not None and Path(sensor_blobs_path / "invalid_tokens.yaml").exists():
+        with open(sensor_blobs_path / "invalid_tokens.yaml", "r") as f:
+            invalid_tokens = yaml.safe_load(f)["invalid_tokens"]
+        invalid_tokens_set = set(invalid_tokens)
+    else:
+        invalid_tokens_set = set()
+
+    # filter logs
+    log_files = list(data_path.iterdir())
+    if scene_filter.log_names is not None:
+        log_files = [log_file for log_file in log_files if log_file.name.replace(".pkl", "") in scene_filter.log_names]
+
+    if scene_filter.tokens is not None:
+        filter_tokens = True
+        tokens = set(scene_filter.tokens)
+    else:
+        filter_tokens = False
+
+    for log_pickle_path in tqdm(log_files, desc="Loading logs"):
+
+        scene_dict_list = pickle.load(open(log_pickle_path, "rb"))
+        for frame_list in split_list(scene_dict_list, scene_filter.num_frames, scene_filter.frame_interval):
+            # Filter scenes which are too short
+            if len(frame_list) < scene_filter.num_frames:
+                continue
+
+            # Filter scenes with no route
+            if scene_filter.has_route and len(frame_list[scene_filter.num_history_frames - 1]["roadblock_ids"]) == 0:
+                continue
+
+            # Filter by token
+            token = frame_list[scene_filter.num_history_frames - 1]["token"]
+            if filter_tokens and token not in tokens:
+                continue
+
+            # filter no camera data
+            # if "CAM_R0" not in frame_list[scene_filter.num_history_frames - 1]["cams"]:
+            #     continue
+            camera_path = frame_list[scene_filter.num_history_frames - 1]["cams"]["CAM_R0"]["data_path"]
+            image_path = sensor_blobs_path / camera_path if sensor_blobs_path is not None else None
+            image_root = "/".join(str(image_path).split("/")[:-2])
+
+            if image_path is not None and image_root in invalid_tokens_set:
+                continue
+            # camera_dict = frame_list[scene_filter.num_history_frames - 1]["cams"]
+            # no_cam = False
+            # for camera_name in camera_dict.keys():
+            #     image_path = sensor_blobs_path / camera_dict[camera_name]["data_path"]
+            #     if not image_path.exists():
+            #         # print("image_path ", image_path)
+            #         # print("No camera data for token ", token)
+            #         no_cam = True
+            #         # print("No camera data for token ", token, " ", sensor_blobs_pcleaath)
+            #         # all_invalid_tokens.add(sensor_blobs_path / token)
+            #         break
+            # if no_cam:
+            #     continue
+
+            filtered_scenes[token] = frame_list
+
+            if (scene_filter.max_scenes is not None) and (len(filtered_scenes) >= scene_filter.max_scenes):
+                stop_loading = True
+                break
+
+        if stop_loading:
+            break
+
+    return filtered_scenes
+
 class SceneLoader:
     """Simple data loader of scenes from logs."""
 
@@ -84,7 +168,16 @@ class SceneLoader:
         :param sensor_config: dataclass for sensor loading specification, defaults to no sensors
         """
 
-        self.scene_frames_dicts = filter_scenes(data_path, scene_filter)
+        if "synthetic" in str(data_path):
+            self.scene_frames_dicts = filter_scenes_synthetic(data_path, scene_filter, sensor_blobs_path)
+
+            # if len(all_invalid_tokens) > 0:
+            #     invalid_token_paths = sorted([str(p) for p in all_invalid_tokens])
+            #     with open(sensor_blobs_path / "invalid_tokens.yaml", "w") as f:
+            #         print("Writing invalid tokens to ", sensor_blobs_path / "invalid_tokens.yaml")
+            #         yaml.dump({"invalid_tokens": invalid_token_paths}, f, default_flow_style=False)
+        else:
+            self.scene_frames_dicts = filter_scenes(data_path, scene_filter)
         self._sensor_blobs_path = sensor_blobs_path
         self._scene_filter = scene_filter
         self._sensor_config = sensor_config

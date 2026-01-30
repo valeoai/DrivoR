@@ -194,12 +194,22 @@ class DrivoRLoss(torch.nn.Module):
 
         da_loss = F.binary_cross_entropy_with_logits(drivable_area_compliance, gt_drivable_area_compliance.to(dtype))
 
-        ttc_loss = F.binary_cross_entropy_with_logits(time_to_collision_within_bound, gt_time_to_collision_within_bound.to(dtype))
+
+        # print("gt_time_to_collision_within_bound:", gt_time_to_collision_within_bound.shape)
+        # print("time_to_collision_within_bound:", time_to_collision_within_bound.shape)
+        # print("gt_time_to_collision_within_bound:", gt_time_to_collision_within_bound)
+        # time_to_collision_within_bound: torch.Size([16, 64])
+        # gt_time_to_collision_within_bound: torch.Size([16, 64])
+        # time_to_collision_within_bound: torch.Size([16, 64])
+
+        mask_valid_ttc = (gt_time_to_collision_within_bound != 2.0).float()
+        ttc_loss =F.binary_cross_entropy_with_logits(time_to_collision_within_bound, gt_time_to_collision_within_bound.to(dtype),  mask_valid_ttc, reduction='sum')/mask_valid_ttc.sum().clamp(min=1.0)
+        # print("F.binary_cross_entropy_with_logits(time_to_collision_within_bound, gt_time_to_collision_within_bound.to(dtype), reduction='none').shape:", F.binary_cross_entropy_with_logits(time_to_collision_within_bound, gt_time_to_collision_within_bound.to(dtype), reduction='none').shape)
+        # print("mask_valid_ttc.shape:", mask_valid_ttc.shape)
 
         # print("gt_no_at_fault_collisions:", gt_no_at_fault_collisions)
         noc_gt = three_to_two_classes(gt_no_at_fault_collisions.to(dtype))
         noc_loss = F.binary_cross_entropy_with_logits(no_at_fault_collisions, noc_gt)
-
         progress_loss = F.binary_cross_entropy_with_logits(ego_progress, gt_ego_progress.to(dtype))
 
         # print("gt_driving_direction_compliance:", gt_driving_direction_compliance)
@@ -224,8 +234,6 @@ class DrivoRLoss(torch.nn.Module):
         dist = torch.linalg.norm(proposals[:, :, None] - proposals[:, None], dim=-1, ord=1).mean(-1)
 
         dist = dist + (dist == 0)
-
-        #dist[dist==0]=10000
 
         inter_loss = -dist.amin(1).amin(1).mean()
 

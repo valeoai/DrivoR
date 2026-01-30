@@ -2,6 +2,7 @@
 #
 
 import math
+import numpy as np
 import torch
 from torch import Tensor
 from torch.nn.parameter import Parameter
@@ -281,13 +282,27 @@ class ImgEncoder(torch.nn.Module):
         }
         
         in_chans = config.in_chans if "in_chans" in config else 3
-        self.model = timm.create_model(model_name,
-                                       pretrained=True,
-                                       pretrained_cfg_overlay=pretrained_cfg_overlay,
-                                       img_size=(config.image_size[1],config.image_size[0]),
-                                       num_classes=0,
-                                       in_chans=in_chans
-                                       )
+        
+        # HACK: to deal with new numpy version that does not allow pickle by default
+        # Create a context manager to temporarily modify np.load
+        np_load_old = np.load
+        np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
+        try:
+            self.model = timm.create_model(
+                model_name,
+                pretrained=True,
+                pretrained_cfg_overlay=pretrained_cfg_overlay,
+                img_size=(config.image_size[1], config.image_size[0]),
+                num_classes=0,
+                in_chans=in_chans)
+        except:
+            self.model = timm.create_model(
+                model_name,
+                pretrained=True,
+                img_size=(config.image_size[1], config.image_size[0]),
+                num_classes=0,
+                in_chans=in_chans)
+        np.load = np_load_old
         
         self.model.__class__ = timm_ViT
         self.patch_size = self.model.patch_embed.patch_size[0]
@@ -300,7 +315,7 @@ class ImgEncoder(torch.nn.Module):
 
         # Adaptation Setting
         if self.use_lora:
-            self.model = LoRA_ViT_timm(self.model, r=config.lora_rank) 
+            self.model = LoRA_ViT_timm(self.model, r=config.lora_rank)
         # Finetuning
         elif self.finetune:
             for param in self.model.parameters():
@@ -345,6 +360,7 @@ class ImgEncoder(torch.nn.Module):
 
 
         B, N, C, H, W = img.size()
+        # print("img.shape ", img.shape)
         img = rearrange(img, 'b n c h w -> (b n) c h w')
         # img = img.reshape(B * N, C, H, W)
         if self.use_grid_mask:
@@ -366,6 +382,7 @@ class ImgEncoder(torch.nn.Module):
             B_, T, D = tokens.shape  # (B*N, num_tokens, dim)
             # Project the sequence of tokens to `num_prefix_tokens` summary tokens
             tokens = self.pool_proj(tokens.transpose(1, 2))  # shape: (B*N, D, T) → (B*N, D, num_prefix_tokens)
+            # print("self.use_feature_pooling: ", self.use_feature_pooling)
             tokens = tokens.transpose(1, 2)  # → (B*N, num_prefix_tokens, D)
         elif self.focus_front_cam:
             B_, T, D = tokens.shape  # (B*N, num_tokens, dim)

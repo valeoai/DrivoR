@@ -220,27 +220,37 @@ class DrivoRTargetBuilder(AbstractTargetBuilder):
         # bev_semantic_map = self._compute_bev_semantic_map(annotations, scene.map_api, ego_pose)
 
         if self._config.long_trajectory_additional_poses > 0:
-            trajectory_long = scene.get_future_trajectory(
-                    num_trajectory_frames=self._config.trajectory_sampling.num_poses + self._config.long_trajectory_additional_poses
-                ).poses
-            x = np.arange(trajectory_long.shape[0], dtype=np.float32)
-            alpha = 2 * self._config.long_trajectory_additional_poses / (self._config.trajectory_sampling.num_poses*(self._config.trajectory_sampling.num_poses+1))
-            x_new = np.arange(trajectory.shape[0], dtype=np.float32)
-            off_sets = np.cumsum((x_new+1)*alpha)
-            x_new += off_sets
-            traj_ = []
-            for i in range(3):
-                y = trajectory_long[:,i]
-                cs = CubicSpline(x, y)
-                traj_.append(cs(x_new))
-            trajectory_long = np.stack(traj_, axis=1)
+            try:
+                trajectory_long = scene.get_future_trajectory(
+                        num_trajectory_frames=self._config.trajectory_sampling.num_poses + self._config.long_trajectory_additional_poses
+                    ).poses
+                x = np.arange(trajectory_long.shape[0], dtype=np.float32)
+                alpha = 2 * self._config.long_trajectory_additional_poses / (self._config.trajectory_sampling.num_poses*(self._config.trajectory_sampling.num_poses+1))
+                x_new = np.arange(trajectory.shape[0], dtype=np.float32)
+                off_sets = np.cumsum((x_new+1)*alpha)
+                x_new += off_sets
+                traj_ = []
+                for i in range(3):
+                    y = trajectory_long[:,i]
+                    cs = CubicSpline(x, y)
+                    traj_.append(cs(x_new))
+                trajectory_long = np.stack(traj_, axis=1)
 
-            trajectory_long = torch.tensor(trajectory_long)
-            return {
-                "trajectory": trajectory,
-                "trajectory_long": trajectory_long,
-                "token":scene.scene_metadata.initial_token
-            }
+                trajectory_long = torch.tensor(trajectory_long)
+                return {
+                    "trajectory": trajectory,
+                    "trajectory_long": trajectory_long,
+                    "token":scene.scene_metadata.initial_token
+                }
+            except:
+                return {
+                    "trajectory": trajectory,
+                    "trajectory_long": trajectory,
+                    # "agent_states": agent_states,
+                    # "agent_labels": agent_labels,
+                    # "bev_semantic_map": bev_semantic_map,
+                    "token":scene.scene_metadata.initial_token
+                }
         else:
 
             return {

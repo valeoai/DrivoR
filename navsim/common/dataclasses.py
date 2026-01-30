@@ -202,14 +202,16 @@ class AgentInput:
                     sensor_names=sensor_names,
                 )
             )
-
-            lidars.append(
-                Lidar.from_paths(
-                    sensor_blobs_path=sensor_blobs_path,
-                    lidar_path=Path(scene_dict_list[frame_idx]["lidar_path"]),
-                    sensor_names=sensor_names,
+            try:
+                lidars.append(
+                    Lidar.from_paths(
+                        sensor_blobs_path=sensor_blobs_path,
+                        lidar_path=Path(scene_dict_list[frame_idx]["lidar_path"]),
+                        sensor_names=sensor_names,
+                    )
                 )
-            )
+            except:
+                lidars.append(Lidar())   # empty lidar if file not found
 
         return AgentInput(ego_statuses, cameras, lidars)
 
@@ -468,12 +470,15 @@ class Scene:
                 sensor_names=sensor_names,
             )
 
-            lidar = Lidar.from_paths(
-                sensor_blobs_path=sensor_blobs_path,
-                lidar_path=Path(scene_dict_list[frame_idx]["lidar_path"]),
-                sensor_names=sensor_names,
-            )
+            try:
 
+                lidar = Lidar.from_paths(
+                    sensor_blobs_path=sensor_blobs_path,
+                    lidar_path=Path(scene_dict_list[frame_idx]["lidar_path"]),
+                    sensor_names=sensor_names,
+                )
+            except :
+                lidar = Lidar()  # empty lidar if file not found
             frame = Frame(
                 token=scene_dict_list[frame_idx]["token"],
                 timestamp=scene_dict_list[frame_idx]["timestamp"],

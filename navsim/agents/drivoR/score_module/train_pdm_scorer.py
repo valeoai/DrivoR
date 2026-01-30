@@ -148,7 +148,10 @@ class PDMScorer:
 
         # 2. weighted metrics
         self._calculate_progress()
-        self._calculate_ttc()
+        try:
+            self._calculate_ttc()
+        except:
+            self._weighted_metrics[WeightedMetricIndex.TTC] = 2.0
         self._calculate_is_comfortable()
         self.pdm_progress = pdm_progress
 

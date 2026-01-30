@@ -2,6 +2,7 @@
 
 defaults:
   - train_test_split: navtrain
+  - train_test_split_synthetic: synthetic_reaction_pdm_v1.0
   # Worker that is used to run simulations
   - worker: ray_distributed_no_torch
   - _self_
