@@ -30,25 +30,33 @@ class MapParameters:
 class MetricCache:
     """Dataclass for storing metric computation information."""
 
+    # file_path: Path
+    # log_name: str
+    # timepoint: TimePoint
+    # scene_type: SceneFrameType
+    # trajectory: InterpolatedTrajectory
+    # human_trajectory: Optional[Trajectory]  # not available for synthetic scenes
+    # past_human_trajectory: InterpolatedTrajectory
+    # ego_state: EgoState
+
+    # observation: PDMObservation
+    # centerline: PDMPath
+    # route_lane_ids: List[str]
+    # drivable_area_map: PDMDrivableMap
+
+    # past_detections_tracks: List[DetectionsTracks]  # past objects at 2Hz
+    # current_tracked_objects: List[DetectionsTracks]  # List containing only current objects
+    # future_tracked_objects: List[DetectionsTracks]  # interpolated at 10Hz
+    # map_parameters: MapParameters
+
     file_path: Path
-    log_name: str
-    timepoint: TimePoint
-    scene_type: SceneFrameType
     trajectory: InterpolatedTrajectory
-    human_trajectory: Optional[Trajectory]  # not available for synthetic scenes
-    past_human_trajectory: InterpolatedTrajectory
     ego_state: EgoState
 
     observation: PDMObservation
     centerline: PDMPath
     route_lane_ids: List[str]
     drivable_area_map: PDMDrivableMap
-
-    past_detections_tracks: List[DetectionsTracks]  # past objects at 2Hz
-    current_tracked_objects: List[DetectionsTracks]  # List containing only current objects
-    future_tracked_objects: List[DetectionsTracks]  # interpolated at 10Hz
-
-    map_parameters: MapParameters
 
     def dump(self) -> None:
         """Dump metric cache to pickle with lzma compression."""
