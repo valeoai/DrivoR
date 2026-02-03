@@ -123,7 +123,7 @@ def filter_scenes_synthetic(data_path: Path, scene_filter: SceneFilter, sensor_b
             image_path = sensor_blobs_path / camera_path if sensor_blobs_path is not None else None
             image_root = "/".join(str(image_path).split("/")[:-2])
 
-            if image_path is not None and image_root in invalid_tokens_set:
+            if image_path is not None and image_root.split("/")[-1] in invalid_tokens_set:
                 continue
             # camera_dict = frame_list[scene_filter.num_history_frames - 1]["cams"]
             # no_cam = False
