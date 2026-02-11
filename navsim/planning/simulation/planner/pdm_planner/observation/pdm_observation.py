@@ -27,6 +27,7 @@ class PDMObservation:
         proposal_sampling: TrajectorySampling,
         map_radius: float,
         observation_sample_res: int = 2,
+        extend_observation_for_ttc: bool = True,
     ):
         """
         Constructor of PDMObservation
@@ -42,11 +43,14 @@ class PDMObservation:
         # observation needs length of trajectory horizon or proposal horizon +1s (for TTC metric)
         self._sample_interval: float = trajectory_sampling.interval_length  # [s]
 
-        self._observation_samples: int = (
-            proposal_sampling.num_poses + int(1 / self._sample_interval)
-            if proposal_sampling.num_poses + int(1 / self._sample_interval) > trajectory_sampling.num_poses
-            else trajectory_sampling.num_poses
-        )
+        if extend_observation_for_ttc:
+            self._observation_samples: int = (
+                proposal_sampling.num_poses + int(1 / self._sample_interval)
+                if proposal_sampling.num_poses + int(1 / self._sample_interval) > trajectory_sampling.num_poses
+                else trajectory_sampling.num_poses
+            )
+        else:
+            self._observation_samples: int = max(trajectory_sampling.num_poses, proposal_sampling.num_poses)
 
         self._map_radius: float = map_radius
         self._observation_sample_res: int = observation_sample_res
