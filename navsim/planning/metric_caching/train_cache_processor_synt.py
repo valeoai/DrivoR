@@ -212,7 +212,7 @@ class MetricCacheProcessor:
             self._proposal_sampling,
             self._map_radius,
             observation_sample_res=1,
-            # extend_observation_for_ttc=False,
+            extend_observation_for_ttc=False,
         )
         pdm_observation.update_detections_tracks(interpolated_detection_tracks)
         return pdm_observation
