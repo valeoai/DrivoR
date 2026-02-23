@@ -1,4 +1,4 @@
-# DrivoR: Driving on Registers
+# [CVPR2026] DrivoR: Driving on Registers
 DrivoR: an end-to-end driving model by driving on registers.
 
 <p align="center">
