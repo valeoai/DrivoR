@@ -11,6 +11,7 @@ DrivoR: an end-to-end driving model by driving on registers.
 
 # Updates
 :sparkles:  Driving on Registers is accepted to CVPR 2026!
+
 :sparkles:  We provide the [scaling](https://github.com/valeoai/DrivoR?tab=readme-ov-file#scaling-with-drivor) experiments and checkpoints.
 # Data and weights
 
