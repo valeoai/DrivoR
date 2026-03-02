@@ -316,7 +316,7 @@ You can find all checkpoints in the GitHub Releases.
 | | | Trainval 103k | 25 | 93.7 |
 | | | Train 103k + Simscale 65k | 30 | 94.0 |
 | | | **Train 103k + Simscale 134k** | **30** | **94.6** |
-| | | *"Human" Driver GT* | *-* | *94.0* |
+| | | *"Human" Driver GT* | *-* | *94.8* |
 | | | | | |
 | **Nav2** | **EPDMS** | Train 85k | 10 | 48.3 |
 | | | Train 85k + Simscale 65k | 30 | 52.2 |
