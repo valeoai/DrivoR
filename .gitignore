@@ -13,3 +13,7 @@ __pycache__/
 /carla/
 *egg*
 .DS_Store
+
+**/metric_cache_*
+**/mini_sensor_blobs
+**/my_dump

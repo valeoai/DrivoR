@@ -260,7 +260,36 @@ class GPKGMapsDB(IMapsDB):
             projection_system = map_meta[map_meta["key"] == "projectedCoordSystem"]["value"].iloc[0]
 
             gdf_in_pixel_coords = pyogrio.read_dataframe(path_on_disk, layer=layer_name, fid_as_index=True)
-            gdf_in_utm_coords = gdf_in_pixel_coords.to_crs(projection_system)
+
+            # ── geopandas 0.13+ compatibility ──────────────────────────────────
+            # Some GPKG layers have an attribute field also named 'geometry', so
+            # pyogrio returns a GeoDataFrame with two columns named 'geometry'.
+            # geopandas 0.13 rejects duplicates inside GeoDataFrame.__init__,
+            # which is hit via to_crs() → self.copy() → _constructor(mgr).
+
+            # Fix: bypass to_crs() entirely. Extract the geometry column by integer
+            # position (pyogrio always appends the actual WKB geometry last, so we
+            # use the last occurrence of 'geometry'), transform it as a standalone
+            # GeoSeries (safe — GeoSeries.to_crs does not copy the parent frame),
+            # then rebuild a clean GeoDataFrame from individual column arrays.
+            # This path is taken unconditionally so it handles both the duplicate
+            # case and the normal case without branching on the column count.
+            _cols = list(gdf_in_pixel_coords.columns)
+            _geom_pos = len(_cols) - 1 - _cols[::-1].index('geometry')
+            _new_geom = gdf_in_pixel_coords.iloc[:, _geom_pos].to_crs(projection_system)
+            _data: dict = {}
+            for _i, _c in enumerate(_cols):
+                if _c == 'geometry':
+                    if _i == _geom_pos:
+                        _data['geometry'] = _new_geom   # CRS-transformed geometry
+                    # skip earlier 'geometry' attribute columns (duplicates)
+                elif _c not in _data:
+                    _data[_c] = gdf_in_pixel_coords.iloc[:, _i]
+            gdf_in_utm_coords = gpd.GeoDataFrame(
+                _data, geometry='geometry', crs=projection_system,
+                index=gdf_in_pixel_coords.index,
+            )
+            # ───────────────────────────────────────────────────────────────────
 
             # For backwards compatibility, cast the index to string datatype.
             #   and mirror it to the "fid" column.
