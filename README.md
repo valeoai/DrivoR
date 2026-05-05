@@ -26,7 +26,7 @@ ViT-S dinoV2 pretrained model can be found in https://huggingface.co/timm/vit_sm
 The model weights are provided in *GitHub Releases*.
 # Installations 
 ```bash
-conda create -n drivoR python=3.8
+conda create -n drivoR python=3.9
 conda activate drivoR
 pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
 pip install -e ./nuplan-devkit
