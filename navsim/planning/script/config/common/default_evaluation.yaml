@@ -2,8 +2,11 @@
 experiment_name: ke
 navsim_log_path: ${oc.env:OPENSCENE_DATA_ROOT}/navsim_logs/${train_test_split.data_split} # path to log annotations
 sensor_blobs_path: ${oc.env:OPENSCENE_DATA_ROOT}/sensor_blobs/${train_test_split.data_split} # path to sensor blobs
+original_sensor_path: ${sensor_blobs_path} # path to original (real) sensor blobs; defaults to sensor_blobs_path, override for navhard two-stage
+synthetic_sensor_path: null # path to synthetic sensor blobs (navhard two-stage); overridden per-run
+synthetic_scenes_path: null # path to synthetic scene pickles (navhard two-stage); overridden per-run
 navsim_log_path_synthetic: ${oc.env:OPENSCENE_DATA_ROOT}/navsim_logs/${train_test_split_synthetic.data_split} # path to log annotations
 sensor_blobs_path_synthetic: ${oc.env:OPENSCENE_DATA_ROOT}/sensor_blobs/${train_test_split_synthetic.data_split} # path to sensor blobs
 date_format: '%m.%d_%H.%M'
-experiment_uid: ${now:${date_format}}
+experiment_uid: ${oc.env:SLURM_JOB_NAME,${now:${date_format}}}
 output_dir: ${oc.env:NAVSIM_EXP_ROOT}/ke/${experiment_name}/${experiment_uid} # path where output csv is saved

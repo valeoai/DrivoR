@@ -14,6 +14,38 @@ from navsim.planning.training.abstract_feature_target_builder import AbstractFea
 logger = logging.getLogger(__name__)
 
 
+class RealDatasetWrapper(torch.utils.data.Dataset):
+    """Wraps a dataset and injects ``real=True`` into every feature dict."""
+
+    def __init__(self, dataset: torch.utils.data.Dataset):
+        self._dataset = dataset
+
+    def __len__(self) -> int:
+        return len(self._dataset)
+
+    def __getitem__(self, idx: int):
+        result = self._dataset[idx]
+        features = result[0]
+        features["real"] = torch.tensor(True)
+        return result
+
+
+class SimDatasetWrapper(torch.utils.data.Dataset):
+    """Wraps a dataset and injects ``real=False`` into every feature dict."""
+
+    def __init__(self, dataset: torch.utils.data.Dataset):
+        self._dataset = dataset
+
+    def __len__(self) -> int:
+        return len(self._dataset)
+
+    def __getitem__(self, idx: int):
+        result = self._dataset[idx]
+        features = result[0]
+        features["real"] = torch.tensor(False)
+        return result
+
+
 def load_feature_target_from_pickle(path: Path) -> Dict[str, torch.Tensor]:
     """Helper function to load pickled feature/target from path."""
     with gzip.open(path, "rb") as f:

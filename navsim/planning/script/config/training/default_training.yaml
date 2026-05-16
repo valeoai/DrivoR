@@ -39,7 +39,8 @@ trainer:
     limit_val_batches: 1.0  # how much of validation dataset to check (float = fraction, int = num_batches)
 
     accelerator: gpu  # distribution method
-    strategy: ddp #_find_unused_parameters_true
+    devices: 8
+    strategy: ddp_find_unused_parameters_true
     precision: 16-mixed  # floating point precision
     num_nodes: 1  # Number of nodes used for training
 
@@ -53,3 +54,10 @@ trainer:
     default_root_dir: ${output_dir}
 
 train_ckpt_path: null
+
+# Sim data mixing (set sim_data_ratio > 0 and provide sim_log_path to enable)
+sim_data_ratio: 0.0        # multiplier relative to real dataset size (1.0 = same number of sim as real)
+sim_log_path: null          # path to sim navsim log directory
+sim_sensor_path: null       # path to sim sensor blobs; falls back to real sensor path if null
+sim_cache_path: null        # path to cache sim features; null = no caching
+force_sim_cache_computation: false

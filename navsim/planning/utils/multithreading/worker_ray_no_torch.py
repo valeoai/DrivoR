@@ -77,6 +77,7 @@ def initialize_ray(
         logger.info("Starting ray local!")
         ray.init(
             num_cpus=number_of_cpus_per_node,
+            object_store_memory=1 * 1024**3,  # hard cap at 1GB per cluster
             dashboard_host="0.0.0.0",
             local_mode=local_mode,
             log_to_driver=log_to_driver,

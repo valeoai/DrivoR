@@ -5,13 +5,13 @@
 #SBATCH --error=/fs/nexus-projects/sim2real/aliu/DrivoR/my_dump/%x.out.%j
 
 ## Scale ntasks with gpus
-#SBATCH --mem=120gb                                               # memory required by job; if unit is not specified MB will be assumed
-#SBATCH --gres=gpu:rtxa6000:1
-#SBATCH --ntasks=16
+#SBATCH --mem=120gb
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
 
 ## GAMMA training config
-#SBATCH --time=5:00:00     
-#SBATCH --qos=huge-long                                    
+#SBATCH --time=48:00:00
+#SBATCH --qos=huge-long
 #SBATCH --account=gamma
 #SBATCH --partition=gamma
 
@@ -30,4 +30,5 @@ CACHE_PATH=/fs/nexus-projects/sim2real/aliu/DrivoR/metric_cache_navtest
 
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_metric_caching.py \
     train_test_split=$TRAIN_TEST_SPLIT \
-    cache.cache_path=$CACHE_PATH
+    cache.cache_path=$CACHE_PATH \
+    worker.threads_per_node=32

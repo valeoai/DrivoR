@@ -2,10 +2,14 @@ from typing import Dict
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .score_module.scorer import Scorer
 from .transformer_decoder import TransformerDecoder, TransformerDecoderScorer
 from .layers.image_encoder.dinov2_lora import ImgEncoder
+from .layers.image_encoder.dinov2_hf import HFDINOv2Encoder
 from .layers.utils.mlp import MLP
+from .v2r_adapter import V2RAdapter
+from .matrix_adapter import MatrixAdapter
 from navsim.agents.drivoR.utils import pylogger
 log = pylogger.get_pylogger(__name__)
 import logging
@@ -51,8 +55,22 @@ class DrivoRModel(nn.Module):
             config_image_backbone["image_size"] = config["image_size"]
             config_image_backbone["num_scene_tokens"] = config["num_scene_tokens"]
             config_image_backbone["tf_d_model"] = config["tf_d_model"]
-            self.image_backbone = ImgEncoder(config_image_backbone)
+            if config_image_backbone.get("use_hf_dinov2", False):
+                self.image_backbone = HFDINOv2Encoder(config_image_backbone)
+            else:
+                self.image_backbone = ImgEncoder(config_image_backbone)
             self.scene_embeds = nn.Parameter(torch.randn(1, self.num_cams, self._config.num_scene_tokens, self.image_backbone.num_features)*1e-6, requires_grad=True)
+
+            if self._config.get("freeze_perception", False):
+                for param in self.image_backbone.parameters():
+                    param.requires_grad = False
+
+            if self._config.get("use_adapter", False):
+                output_size = (config["image_size"][1], config["image_size"][0])
+                if self._config.get("use_matrix_adapter", False):
+                    self.adapter = MatrixAdapter(output_size=output_size)
+                else:
+                    self.adapter = V2RAdapter(output_size=output_size)
 
             # print("self.scene_embeds ", self.scene_embeds)
 
@@ -103,6 +121,22 @@ class DrivoRModel(nn.Module):
 
         self.b2d=config.b2d
 
+        if self._config.get("freeze_all_except_adapter", False):
+            for param in self.parameters():
+                param.requires_grad = False
+            if hasattr(self, "adapter"):
+                for param in self.adapter.parameters():
+                    param.requires_grad = True
+
+            # Gradient checkpointing: recompute activations on backward instead of
+            # storing them. Required when backpropping through a frozen ViT to reach
+            # the adapter — without this, all block activations are kept alive and
+            # exhaust VRAM on A5000 (23.5 GiB) even with a small batch size.
+            if hasattr(self, "image_backbone") and hasattr(self.image_backbone, "model"):
+                _m = self.image_backbone.model
+                _vit = _m.lora_vit if hasattr(_m, "lora_vit") else _m
+                _vit.grad_checkpointing = True
+                print("[freeze_all_except_adapter] gradient checkpointing enabled on image backbone")
 
     def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         
@@ -134,6 +168,22 @@ class DrivoRModel(nn.Module):
                 raise ValueError
 
             scene_tokens = self.scene_embeds.repeat(batch_size, 1, 1, 1)
+
+            # ── V2R adapter: translate sim images into real-image space ──────────
+            # `real` is a (B,) integer tensor: 1 = real sample, 0 = sim sample.
+            if self._config.get("use_adapter", False):
+                real = features.get(
+                    "real", torch.ones(batch_size, dtype=torch.long, device=img.device)
+                )
+                if (real == 0).any():
+                    B_img, N_img, C_img, H_img, W_img = img.shape
+                    img_flat = img.reshape(B_img * N_img, C_img, H_img, W_img)
+                    sim_mask = real.repeat_interleave(N_img) == 0  # (B*N,)
+                    sim_idx = sim_mask.nonzero(as_tuple=False).view(-1)
+                    adapted = self.adapter(img_flat[sim_idx].contiguous())
+                    img_flat = img_flat.index_put((sim_idx,), adapted)
+                    img = img_flat.view(B_img, N_img, C_img, H_img, W_img)
+
             image_scene_tokens = self.image_backbone(img, scene_tokens)
 
             log.debug(f"Backbone image - {image_scene_tokens.shape}")
@@ -171,6 +221,11 @@ class DrivoRModel(nn.Module):
         output["proposals"] = proposals
         output["proposal_list"] = proposal_list
 
+        if self._config.get("freeze_all_except_adapter", False) and hasattr(self, "adapter"):
+            output["_adapter_anchor"] = 0.0 * sum(
+                p.sum() for p in self.adapter.parameters()
+            )
+
         # scoring
         B,N,_,_=proposals.shape
 
@@ -187,13 +242,14 @@ class DrivoRModel(nn.Module):
         output["agent_states"]=agent_states
         output["agent_labels"]=agent_labels
 
+        _eps = 1e-7
         pdm_score = (
-        self._config.noc * pred_logit['no_at_fault_collisions'].sigmoid().log() +
-        self._config.dac * pred_logit['drivable_area_compliance'].sigmoid().log() +
-        self._config.ddc * pred_logit['driving_direction_compliance'].sigmoid().log() +    
+        self._config.noc * pred_logit['no_at_fault_collisions'].sigmoid().clamp(min=_eps).log() +
+        self._config.dac * pred_logit['drivable_area_compliance'].sigmoid().clamp(min=_eps).log() +
+        self._config.ddc * pred_logit['driving_direction_compliance'].sigmoid().clamp(min=_eps).log() +
         (self._config.ttc * pred_logit['time_to_collision_within_bound'].sigmoid() +
-        self._config.ep * pred_logit['ego_progress'].sigmoid()  
-        + self._config.comfort * pred_logit['comfort'].sigmoid()).log()
+        self._config.ep * pred_logit['ego_progress'].sigmoid()
+        + self._config.comfort * pred_logit['comfort'].sigmoid()).clamp(min=_eps).log()
         )
 
         token = torch.argmax(pdm_score, dim=1)

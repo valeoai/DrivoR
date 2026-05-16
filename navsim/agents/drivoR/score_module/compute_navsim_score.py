@@ -46,13 +46,17 @@ def get_sub_score( metric_cache,poses,test):
 
     simulated_states = simulator.simulate_proposals(trajectory_states, initial_ego_state)#32,41,11
 
+    # pdm_progress is only present in the DrivoR training-format cache.
+    # Fall back to 0.0 for older caches; scoring still works but without a PDM baseline.
+    pdm_progress = getattr(metric_cache, 'pdm_progress', 0.0)
+
     final_scores=scorer.score_proposals(
         simulated_states,
         metric_cache.observation,
         metric_cache.centerline,
         metric_cache.route_lane_ids,
         metric_cache.drivable_area_map,
-        metric_cache.pdm_progress
+        pdm_progress
     )
 
     num_col=2
@@ -63,11 +67,11 @@ def get_sub_score( metric_cache,poses,test):
 
     no_at_fault_collisions = scorer._multi_metrics[MultiMetricIndex.NO_COLLISION, :]
     drivable_area_compliance = scorer._multi_metrics[MultiMetricIndex.DRIVABLE_AREA, :]
-    driving_direction_compliance = scorer._weighted_metrics[WeightedMetricIndex.DRIVING_DIRECTION, :  ]
+    driving_direction_compliance = scorer._weighted_metrics[WeightedMetricIndex.TWO_FRAME_EXTENDED_COMFORT, :]
 
     ego_progress = scorer._weighted_metrics[WeightedMetricIndex.PROGRESS, :]
     time_to_collision_within_bound = scorer._weighted_metrics[WeightedMetricIndex.TTC, :]
-    comfort = scorer._weighted_metrics[WeightedMetricIndex.COMFORTABLE, :]
+    comfort = scorer._weighted_metrics[WeightedMetricIndex.HISTORY_COMFORT, :]
 
 
     scores=np.stack([no_at_fault_collisions,drivable_area_compliance,

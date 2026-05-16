@@ -52,8 +52,8 @@ class PDMScorerConfig:
         weighted_metrics = np.zeros(len(WeightedMetricIndex), dtype=np.float64)
         weighted_metrics[WeightedMetricIndex.PROGRESS] = self.progress_weight
         weighted_metrics[WeightedMetricIndex.TTC] = self.ttc_weight
-        weighted_metrics[WeightedMetricIndex.COMFORTABLE] = self.comfortable_weight
-        weighted_metrics[WeightedMetricIndex.DRIVING_DIRECTION] = self.driving_direction_weight
+        weighted_metrics[WeightedMetricIndex.HISTORY_COMFORT] = self.comfortable_weight
+        weighted_metrics[WeightedMetricIndex.TWO_FRAME_EXTENDED_COMFORT] = self.driving_direction_weight
         return weighted_metrics
 
 
@@ -406,7 +406,7 @@ class PDMScorer:
             else:
                 driving_direction_compliance_scores[proposal_idx] = 0.0
 
-        self._weighted_metrics[WeightedMetricIndex.DRIVING_DIRECTION] = driving_direction_compliance_scores
+        self._weighted_metrics[WeightedMetricIndex.TWO_FRAME_EXTENDED_COMFORT] = driving_direction_compliance_scores
 
     def _calculate_progress(self) -> None:
         """
@@ -526,4 +526,4 @@ class PDMScorer:
         )
         self.is_comfortable = ego_is_comfortable(self._states, time_point_s)
         # print(is_comfortable)
-        self._weighted_metrics[WeightedMetricIndex.COMFORTABLE] = np.all(self.is_comfortable, axis=-1)
+        self._weighted_metrics[WeightedMetricIndex.HISTORY_COMFORT] = np.all(self.is_comfortable, axis=-1)

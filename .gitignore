@@ -17,3 +17,4 @@ __pycache__/
 **/metric_cache_*
 **/mini_sensor_blobs
 **/my_dump
+**/lightning_logs

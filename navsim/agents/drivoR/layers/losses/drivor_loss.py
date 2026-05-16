@@ -245,8 +245,14 @@ class DrivoRLoss(torch.nn.Module):
         proposal_list = pred["proposal_list"]
         target_trajectory = targets["trajectory"]
 
-        final_scores, best_scores, target_scores, gt_states, gt_valid, gt_ego_areas = scoring_function(
-            targets, proposals, test=False)
+        if scoring_function is not None and self.final_score_weight > 0:
+            final_scores, best_scores, target_scores, gt_states, gt_valid, gt_ego_areas = scoring_function(
+                targets, proposals, test=False)
+        else:
+            b, n = proposals.shape[:2]
+            final_scores = torch.zeros(b, n, device=proposals.device)
+            best_scores = torch.zeros(b, device=proposals.device)
+            target_scores = gt_states = gt_valid = gt_ego_areas = None
 
         ########
         if "trajectory_long" in targets.keys():
@@ -283,7 +289,7 @@ class DrivoRLoss(torch.nn.Module):
         # inter_loss1 = inter_loss_list[1]
         l2_distance =  -((proposals.detach() - target_trajectory[:, None]) ** 2) / 0.5 # b,64,8,8
         
-        if "pred_logit" in pred.keys():
+        if "pred_logit" in pred.keys() and target_scores is not None:
             sub_score_loss, final_score_loss, pred_ce_loss, pred_l1_loss, pred_area_loss = self.score_loss(
                 pred["pred_logit"], pred["pred_logit2"],
                 pred["pred_agents_states"], pred["pred_area_logit"]
@@ -314,7 +320,7 @@ class DrivoRLoss(torch.nn.Module):
                 + self.agent_class_weight * agent_class_loss
                 + self.agent_box_weight * agent_box_loss
                 + self.bev_semantic_weight * bev_semantic_loss
-
+                + pred.get("_adapter_anchor", 0.0)
         )
 
         pdm_score = pred["pdm_score"].detach()
@@ -322,7 +328,10 @@ class DrivoRLoss(torch.nn.Module):
         score = final_scores[np.arange(len(final_scores)), top_proposals].mean()
         best_score = best_scores.mean()
 
-        [da_loss, ttc_loss, noc_loss, progress_loss, ddc_loss, comfort_loss] = sub_score_loss
+        if sub_score_loss == 0:
+            da_loss = ttc_loss = noc_loss = progress_loss = ddc_loss = comfort_loss = 0
+        else:
+            [da_loss, ttc_loss, noc_loss, progress_loss, ddc_loss, comfort_loss] = sub_score_loss
 
         loss_dict = {
             "loss": loss,

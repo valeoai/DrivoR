@@ -1,3 +1,26 @@
+traffic_agents_policy:
+  non_reactive:
+    _target_: navsim.traffic_agents_policies.log_replay_traffic_agents.LogReplayTrafficAgents
+    _convert_: all
+  reactive:
+    _target_: navsim.traffic_agents_policies.navsim_IDM_traffic_agents.NavsimIDMTrafficAgents
+    _convert_: all
+    idm_agents_observation:
+      _target_: navsim.planning.simulation.observation.navsim_idm_agents.NavsimIDMAgents
+      _convert_: 'all'
+      target_velocity: 10
+      min_gap_to_lead_agent: 1.0
+      headway_time: 1.5
+      accel_max: 1.0
+      decel_max: 2.0
+      open_loop_detections_types: []
+      minimum_path_length: 20
+      planned_trajectory_samples: null
+      planned_trajectory_sample_interval: null
+      radius: 100
+      add_open_loop_parked_vehicles: true
+      idm_snap_threshold: 3.0
+
 proposal_sampling:
   _target_: nuplan.planning.simulation.trajectory.trajectory_sampling.TrajectorySampling
   _convert_: 'all'
@@ -13,18 +36,22 @@ scorer:
   _target_: navsim.planning.simulation.planner.pdm_planner.scoring.pdm_scorer.PDMScorer
   _convert_: 'all'
   proposal_sampling: ${proposal_sampling}
-  config: 
+  config:
     _target_: navsim.planning.simulation.planner.pdm_planner.scoring.pdm_scorer.PDMScorerConfig
     _convert_: 'all'
     # weighted metric weights
     progress_weight: 5.0
     ttc_weight: 5.0
-    comfortable_weight: 2.0
-    driving_direction_weight: 0.0
+    lane_keeping_weight: 2.0
+    history_comfort_weight: 2.0
+    two_frame_extended_comfort_weight: 2.0
 
     # thresholds
     driving_direction_horizon: 1.0  # [s] (driving direction)
     driving_direction_compliance_threshold: 2.0  # [m] (driving direction)
     driving_direction_violation_threshold: 6.0  # [m] (driving direction)
     stopped_speed_threshold: 5e-03  # [m/s] (ttc)
+    future_collision_horizon_window: 1.0  # [s] (ttc)
     progress_distance_threshold: 5.0  # [m] (progress)
+    lane_keeping_deviation_limit: 0.5  # [m] (lane keeping)
+    lane_keeping_horizon_window: 2.0  # [s] (lane keeping)

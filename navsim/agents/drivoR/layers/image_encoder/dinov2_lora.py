@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 from timm.models.vision_transformer import VisionTransformer
+from torch.utils.checkpoint import checkpoint
 from einops import rearrange
 from safetensors import safe_open
 from safetensors.torch import save_file
@@ -77,7 +78,8 @@ class timm_ViT(VisionTransformer):
             for blk in self.blocks:
                 x = blk(x, attn_mask=attn_mask)
         elif self.grad_checkpointing and not torch.jit.is_scripting():
-            x = checkpoint_seq(self.blocks, x)
+            for blk in self.blocks:
+                x = checkpoint(blk, x, use_reentrant=False)
         else:
             x = self.blocks(x)
 

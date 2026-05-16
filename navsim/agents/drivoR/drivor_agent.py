@@ -91,18 +91,20 @@ class DrivoRAgent(AbstractAgent):
             self.bce_logit_loss = nn.BCEWithLogitsLoss()
             self.b2d = config.b2d
 
-            self.ray=True
+            # Only initialize Ray on rank 0.
+            _rank = int(os.environ.get("LOCAL_RANK", 0))
+            self.ray = (_rank == 0)
 
             if self.ray:
                 from navsim.planning.utils.multithreading.worker_ray_no_torch import RayDistributedNoTorch
                 from nuplan.planning.utils.multithreading.worker_utils import worker_map
-                self.worker = RayDistributedNoTorch(threads_per_node=8)
+                self.worker = RayDistributedNoTorch(threads_per_node=config.get("ray_threads", 4))
                 self.worker_map=worker_map
 
 
             from .score_module.compute_navsim_score import get_scores
 
-            metric_cache = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_cache"))
+            metric_cache = MetricCacheLoader(Path(os.getenv("NAVSIM_TRAIN_METRIC_CACHE", os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_cache")))
             try:
                 # add synthetic metric_cache
                 metric_cache_synthetic_0 = MetricCacheLoader(Path(os.getenv("NAVSIM_EXP_ROOT") + "/train_metric_synthetic_reaction_pdm_v1.0-0"))
@@ -190,39 +192,55 @@ class DrivoRAgent(AbstractAgent):
             metric_cache_paths_synthetic = self.test_metric_cache_paths_synthetic
 
         target_trajectory = targets["trajectory"]
-        proposals=proposals.detach()
+        proposals = proposals.detach()
+        b = len(targets["token"])
+        n = proposals.shape[1]
+        device = proposals.device
 
-        
-        data_points = [
-            {
-                "token": metric_cache_paths[token] if token in metric_cache_paths else metric_cache_paths_synthetic[token],
-                "poses": poses,
-                "test": test
-            }
-            for token, poses in zip(targets["token"], proposals.cpu().numpy())
-        ]
-
-        if self.ray:
-            all_res = self.worker_map(self.worker, self.get_scores, data_points)
-        else:
-            all_res = self.get_scores(data_points)
-
-        target_scores = torch.FloatTensor(np.stack([res[0] for res in all_res])).to(proposals.device)
-
-        final_scores = target_scores[:, :, -1]
-
-        best_scores = torch.amax(final_scores, dim=-1)
+        # Build data_points only for tokens present in a cache; track valid indices
+        data_points = []
+        valid_indices = []
+        for i, (token, poses) in enumerate(zip(targets["token"], proposals.cpu().numpy())):
+            if token in metric_cache_paths:
+                data_points.append({"token": metric_cache_paths[token], "poses": poses, "test": test})
+                valid_indices.append(i)
+            elif metric_cache_paths_synthetic is not None and token in metric_cache_paths_synthetic:
+                data_points.append({"token": metric_cache_paths_synthetic[token], "poses": poses, "test": test})
+                valid_indices.append(i)
 
         if test:
             l2_2s = torch.linalg.norm(proposals[:, 0] - target_trajectory, dim=-1)[:, :4]
 
+        if not data_points:
+            final_scores = torch.zeros(b, n, device=device)
+            best_scores = torch.zeros(b, device=device)
+            if test:
+                return final_scores[:, 0].mean(), best_scores.mean(), final_scores, l2_2s.mean(), torch.zeros(b, 7, device=device)
+            else:
+                return final_scores, best_scores, torch.zeros(b, n, 7, device=device), None, None, None
+
+        if self.ray:
+            valid_res = self.worker_map(self.worker, self.get_scores, data_points)
+        else:
+            valid_res = self.get_scores(data_points)
+
+        # Assemble full-batch target_scores; missing tokens stay zero
+        valid_scores = np.stack([res[0] for res in valid_res])   # (v, n_proposals, 7)
+        n_score_dims = valid_scores.shape[-1]
+        target_scores_np = np.zeros((b, n, n_score_dims), dtype=np.float32)
+        for out_i, batch_i in enumerate(valid_indices):
+            target_scores_np[batch_i] = valid_scores[out_i]
+        target_scores = torch.FloatTensor(target_scores_np).to(device)
+
+        final_scores = target_scores[:, :, -1]
+        best_scores = torch.amax(final_scores, dim=-1)
+
+        if test:
             return final_scores[:, 0].mean(), best_scores.mean(), final_scores, l2_2s.mean(), target_scores[:, 0]
         else:
-            key_agent_corners = torch.FloatTensor(np.stack([res[1] for res in all_res])).to(proposals.device)
-
-            key_agent_labels = torch.BoolTensor(np.stack([res[2] for res in all_res])).to(proposals.device)
-
-            all_ego_areas = torch.BoolTensor(np.stack([res[3] for res in all_res])).to(proposals.device)
+            key_agent_corners = torch.FloatTensor(np.stack([res[1] for res in valid_res])).to(device)
+            key_agent_labels = torch.BoolTensor(np.stack([res[2] for res in valid_res])).to(device)
+            all_ego_areas = torch.BoolTensor(np.stack([res[3] for res in valid_res])).to(device)
 
             return final_scores, best_scores, target_scores, key_agent_corners, key_agent_labels, all_ego_areas
 
@@ -281,11 +299,13 @@ class DrivoRAgent(AbstractAgent):
 
         checkpoint_cb_best = ModelCheckpoint(save_top_k=1,
                                         monitor='val/score_epoch',
-                                        filename='best-{epoch}-{step}',
+                                        filename='best-epoch{epoch}-step{step}',
+                                        auto_insert_metric_name=False,
                                         mode="max"
                                         )
-        
-        checkpoint_cb = ModelCheckpoint(save_last=True)
+
+        checkpoint_cb = ModelCheckpoint(save_last=True, filename='epoch{epoch}-step{step}',
+                                        auto_insert_metric_name=False)
 
         lr_monitor = LearningRateMonitor(logging_interval="step", 
                                             log_momentum=False,

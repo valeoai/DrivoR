@@ -10,6 +10,7 @@ import hydra
 import numpy as np
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+import torch
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 import pytorch_lightning as pl
@@ -17,7 +18,8 @@ import pytorch_lightning as pl
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
 from navsim.common.dataloader import SceneLoader
-from navsim.planning.training.dataset import CacheOnlyDataset, Dataset
+from navsim.planning.training.dataset import CacheOnlyDataset, Dataset, RealDatasetWrapper, SimDatasetWrapper
+from torch.utils.data import ConcatDataset
 from navsim.planning.training.agent_lightning_module import AgentLightningModule
 
 logger = logging.getLogger(__name__)
@@ -71,21 +73,50 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         sensor_config=agent.get_sensor_config(),
     )
 
-    train_data = Dataset(
+    train_data = RealDatasetWrapper(Dataset(
         scene_loader=train_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
         cache_path=cfg.cache_path,
         force_cache_computation=cfg.force_cache_computation,
-    )
+    ))
 
-    val_data = Dataset(
+    val_data = RealDatasetWrapper(Dataset(
         scene_loader=val_scene_loader,
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders(),
         cache_path=cfg.cache_path,
         force_cache_computation=cfg.force_cache_computation,
-    )
+    ))
+
+    # Optionally mix in sim data. sim_data_ratio > 0 enables this path.
+    sim_data_ratio = cfg.get("sim_data_ratio", 0.0)
+    sim_log_path = cfg.get("sim_log_path", None)
+    if sim_data_ratio > 0 and sim_log_path is not None:
+        sim_sensor_path = cfg.get("sim_sensor_path", None) or cfg.sensor_blobs_path
+        sim_scene_filter: SceneFilter = instantiate(cfg.train_test_split.scene_filter)
+        sim_scene_filter.log_names = None  # sim pkl names differ from real log names; don't filter by name
+        sim_scene_filter.tokens = None     # sim tokens differ from real tokens
+        sim_scene_filter.has_route = False  # converted sim data has no roadblock_ids
+        sim_scene_loader = SceneLoader(
+            sensor_blobs_path=Path(sim_sensor_path),
+            data_path=Path(sim_log_path),
+            scene_filter=sim_scene_filter,
+            sensor_config=agent.get_sensor_config(),
+        )
+        sim_dataset = SimDatasetWrapper(Dataset(
+            scene_loader=sim_scene_loader,
+            feature_builders=agent.get_feature_builders(),
+            target_builders=agent.get_target_builders(),
+            cache_path=cfg.get("sim_cache_path", None),
+            force_cache_computation=cfg.get("force_sim_cache_computation", False),
+        ))
+        # subsample sim dataset to sim_data_ratio * len(real)
+        n_sim = min(len(sim_dataset), int(sim_data_ratio * len(train_data._dataset)))
+        indices = torch.randperm(len(sim_dataset))[:n_sim].tolist()
+        sim_dataset = torch.utils.data.Subset(sim_dataset, indices)
+        logger.info(f"Mixing {n_sim} sim samples with {len(train_data._dataset)} real samples (ratio={sim_data_ratio})")
+        train_data = ConcatDataset([train_data, sim_dataset])
 
     return train_data, val_data
 

@@ -113,6 +113,32 @@ class AgentLightningModule(pl.LightningModule):
         else:
             return self._step(batch, "val")
 
+    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        current_state = self.state_dict()
+
+        # Fill keys present in the current model but missing from checkpoint
+        # (e.g. new modules added for fine-tuning — train from scratch).
+        for key in current_state:
+            if key not in checkpoint["state_dict"]:
+                checkpoint["state_dict"][key] = current_state[key]
+
+        # Drop checkpoint keys that are absent from the current model or have a
+        # shape mismatch (e.g. backbone was swapped between runs). Those params
+        # are already covered by the fill-in pass above.
+        stale_keys = [
+            key for key, val in checkpoint["state_dict"].items()
+            if key not in current_state or val.shape != current_state[key].shape
+        ]
+        for key in stale_keys:
+            if key in current_state:
+                checkpoint["state_dict"][key] = current_state[key]
+            else:
+                del checkpoint["state_dict"][key]
+
+        # Reset optimizer/scheduler state when the parameter groups don't match.
+        checkpoint["optimizer_states"] = []
+        checkpoint["lr_schedulers"] = []
+
     def configure_optimizers(self):
         """Inherited, see superclass."""
         return self.agent.get_optimizers()

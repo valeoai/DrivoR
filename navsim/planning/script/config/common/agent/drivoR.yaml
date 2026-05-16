@@ -4,6 +4,12 @@ config:
 
   b2d: false # training for navsim
 
+  use_adapter: false              # set true to enable sim-to-real adapter
+  use_matrix_adapter: false       # set true to use MatrixAdapter instead of V2RAdapter
+  freeze_perception: false        # set true to freeze image backbone weights during training
+  freeze_all_except_adapter: false # set true to freeze entire model; only adapter trains
+  ray_threads: 1          # Ray workers for per-batch score computation (reduce if OOM)
+
   shared_refiner: false
   ref_num: 4 # number of refining steps
   scorer_ref_num: 4
@@ -53,6 +59,11 @@ config:
     focus_front_cam: false
     use_feature_pooling: false
     compress_fc: false
+    # Set use_hf_dinov2: true to replace the timm ViT+LoRA backbone with a
+    # frozen HuggingFace Dinov2Backbone (same approach as M2R). When enabled,
+    # model_name / use_lora / lora_rank are ignored.
+    use_hf_dinov2: false
+    hf_model_name: facebook/dinov2-base  # or facebook/dinov2-small, dinov2-large
 
 
   # fov: [[-50., -50., -5.], [50., 50., 5.]] # simplebev field of view

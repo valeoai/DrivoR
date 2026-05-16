@@ -76,13 +76,31 @@ class DrivoRFeatureBuilder(AbstractFeatureBuilder):
         # cameras = [cameras.cam_b0, cameras.cam_f0, cameras.cam_l0, cameras.cam_l1, cameras.cam_l2, cameras.cam_r0, cameras.cam_r1, cameras.cam_r2]
 
         # this is a change for the focus front cam
-        cameras = [cameras.cam_f0, cameras.cam_b0, cameras.cam_l0, cameras.cam_l1, cameras.cam_l2, cameras.cam_r0, cameras.cam_r1, cameras.cam_r2]
+        # Pair each camera with its config key so we can distinguish
+        # "expected but missing" (pad) from "not configured" (skip).
+        cam_with_cfg = [
+            (cameras.cam_f0, self._config.get("cam_f0", [])),
+            (cameras.cam_b0, self._config.get("cam_b0", [])),
+            (cameras.cam_l0, self._config.get("cam_l0", [])),
+            (cameras.cam_l1, self._config.get("cam_l1", [])),
+            (cameras.cam_l2, self._config.get("cam_l2", [])),
+            (cameras.cam_r0, self._config.get("cam_r0", [])),
+            (cameras.cam_r1, self._config.get("cam_r1", [])),
+            (cameras.cam_r2, self._config.get("cam_r2", [])),
+        ]
 
         images = []
         cam_Ks = []
         lidar2cams = []
-        for cam in cameras:
+        W, H = self._config.image_size
+        for cam, cam_cfg in cam_with_cfg:
             if cam.image is None:
+                if len(cam_cfg) == 0:
+                    continue  # not configured — skip, matches real-data behaviour
+                # configured but missing from data (e.g. sim data) — pad with zeros
+                images.append(torch.zeros(3, H, W))
+                cam_Ks.append(torch.zeros(3, 3))
+                lidar2cams.append(torch.eye(4, dtype=torch.float64))
                 continue
 
             im = Image.fromarray(cam.image)

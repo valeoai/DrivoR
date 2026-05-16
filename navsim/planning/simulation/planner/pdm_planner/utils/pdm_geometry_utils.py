@@ -5,7 +5,7 @@ import numpy.typing as npt
 
 from nuplan.common.actor_state.state_representation import StateSE2
 
-from navsim.planning.simulation.planner.pdm_planner.utils.pdm_enums import SE2Index
+from navsim.planning.simulation.planner.pdm_planner.utils.pdm_enums import PointIndex, SE2Index
 
 
 def normalize_angle(angle):
@@ -94,3 +94,41 @@ def convert_absolute_to_relative_se2_array(
     points_rel[:, 2] = normalize_angle(points_rel[:, 2])
 
     return points_rel
+
+
+def se2_array_translate_longitudinally(se2_array: npt.NDArray[np.float64], distance: float) -> npt.NDArray[np.float64]:
+    assert se2_array.shape[-1] == len(SE2Index)
+    translate_se2 = np.zeros(se2_array.shape, dtype=np.float64)
+    translate_se2[..., SE2Index.X] = se2_array[..., SE2Index.X] + np.cos(se2_array[..., SE2Index.HEADING]) * distance
+    translate_se2[..., SE2Index.Y] = se2_array[..., SE2Index.Y] + np.sin(se2_array[..., SE2Index.HEADING]) * distance
+    translate_se2[..., SE2Index.HEADING] = se2_array[..., SE2Index.HEADING]
+    return translate_se2
+
+
+def get_velocity_shifted(
+    displacement: npt.NDArray[np.float64],
+    ref_velocity_2d: npt.NDArray[np.float64],
+    ref_angular_vel: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
+    assert displacement.shape[-1] == len(PointIndex)
+    assert ref_velocity_2d.shape[-1] == len(PointIndex)
+    assert ref_velocity_2d.shape[:-1] == ref_angular_vel.shape
+    velocity_shift_term = np.zeros(ref_velocity_2d.shape, dtype=ref_velocity_2d.dtype)
+    velocity_shift_term[..., PointIndex.X] = -displacement[..., PointIndex.Y] * ref_angular_vel
+    velocity_shift_term[..., PointIndex.Y] = displacement[..., PointIndex.X] * ref_angular_vel
+    return ref_velocity_2d + velocity_shift_term
+
+
+def get_acceleration_shifted(
+    displacement: npt.NDArray[np.float64],
+    ref_accel_2d: npt.NDArray[np.float64],
+    ref_angular_vel: npt.NDArray[np.float64],
+    ref_angular_accel: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
+    assert displacement.shape[-1] == len(PointIndex)
+    assert ref_accel_2d.shape[-1] == len(PointIndex)
+    assert ref_accel_2d.shape[:-1] == ref_angular_vel.shape
+    assert ref_accel_2d.shape[:-1] == ref_angular_accel.shape
+    centripetal_acceleration_term = displacement * ref_angular_vel[..., None] ** 2
+    angular_acceleration_term = displacement * ref_angular_accel[..., None]
+    return ref_accel_2d + centripetal_acceleration_term + angular_acceleration_term

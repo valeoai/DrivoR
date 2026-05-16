@@ -1,6 +1,7 @@
 from enum import IntEnum
 
 
+
 class StateIndex:
     """Index mapping for array representation of ego states."""
 
@@ -177,6 +178,8 @@ class MultiMetricIndex(IntEnum):
 
     NO_COLLISION = 0
     DRIVABLE_AREA = 1
+    TRAFFIC_LIGHT_COMPLIANCE = 2
+    DRIVING_DIRECTION = 3
 
 
 class WeightedMetricIndex(IntEnum):
@@ -184,5 +187,13 @@ class WeightedMetricIndex(IntEnum):
 
     PROGRESS = 0
     TTC = 1
-    COMFORTABLE = 2
-    DRIVING_DIRECTION = 3
+    LANE_KEEPING = 2
+    HISTORY_COMFORT = 3
+    TWO_FRAME_EXTENDED_COMFORT = 4
+
+
+class PointIndex(IntEnum):
+    """Index mapping for (x,y) arrays."""
+
+    X = 0
+    Y = 1

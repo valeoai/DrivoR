@@ -138,13 +138,14 @@ class AbstractPDMClosedPlanner(AbstractPDMPlanner):
         simulated_proposals_array = self._simulator.simulate_proposals(proposals_array, ego_state)
 
         # 5. Score proposals
-        proposal_scores = self._scorer.score_proposals(
+        proposal_score_dfs = self._scorer.score_proposals(
             simulated_proposals_array,
             self._observation,
             self._centerline,
             list(self._route_lane_dict.keys()),
             self._drivable_area_map,
         )
+        proposal_scores = np.array([df["pdm_score"].iloc[0] for df in proposal_score_dfs])
 
         trajectory = self._generator.generate_trajectory(np.argmax(proposal_scores))
         return trajectory

@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import io
 import os
+import pickle
 
 import numpy as np
 import numpy.typing as npt
@@ -83,15 +84,16 @@ class Cameras:
             else:
                 data_dict[camera_identifier] = Camera()  # empty camera
 
+        _empty = Camera()
         return Cameras(
-            cam_f0=data_dict["cam_f0"],
-            cam_l0=data_dict["cam_l0"],
-            cam_l1=data_dict["cam_l1"],
-            cam_l2=data_dict["cam_l2"],
-            cam_r0=data_dict["cam_r0"],
-            cam_r1=data_dict["cam_r1"],
-            cam_r2=data_dict["cam_r2"],
-            cam_b0=data_dict["cam_b0"],
+            cam_f0=data_dict.get("cam_f0", _empty),
+            cam_l0=data_dict.get("cam_l0", _empty),
+            cam_l1=data_dict.get("cam_l1", _empty),
+            cam_l2=data_dict.get("cam_l2", _empty),
+            cam_r0=data_dict.get("cam_r0", _empty),
+            cam_r1=data_dict.get("cam_r1", _empty),
+            cam_r2=data_dict.get("cam_r2", _empty),
+            cam_b0=data_dict.get("cam_b0", _empty),
         )
 
 
@@ -154,6 +156,7 @@ class AgentInput:
         sensor_blobs_path: Path,
         num_history_frames: int,
         sensor_config: SensorConfig,
+        img_perturb=None,  # accepted for API compatibility; not applied
     ) -> AgentInput:
         """
         Load agent input from scene dictionary.
@@ -261,6 +264,10 @@ class SceneMetadata:
 
     num_history_frames: int
     num_future_frames: int
+
+    # set for synthetic scenes; None for original scenes
+    corresponding_original_scene: str = None
+    corresponding_original_initial_token: str = None
 
 
 @dataclass
@@ -396,7 +403,8 @@ class Scene:
     @classmethod
     def _build_map_api(cls, map_name: str) -> AbstractMap:
         """Helper classmethod to load map api from name."""
-        assert map_name in MAP_LOCATIONS, f"The map name {map_name} is invalid, must be in {MAP_LOCATIONS}"
+        if map_name not in MAP_LOCATIONS:
+            return None  # virtual/sim maps (e.g. CARLA towns) have no NuPlan map
         return get_maps_api(NUPLAN_MAPS_ROOT, "nuplan-maps-v1.0", map_name)
 
     @classmethod
@@ -493,6 +501,50 @@ class Scene:
 
         return Scene(scene_metadata=scene_metadata, map_api=map_api, frames=frames)
 
+    @classmethod
+    def load_from_disk(
+        cls,
+        file_path: Path,
+        sensor_blobs_path: Path,
+        sensor_config: SensorConfig = None,
+        img_perturb=None,  # accepted for API compatibility; not forwarded (unsupported)
+    ) -> Scene:
+        """Load a synthetic scene pickle from disk (navhard two-stage evaluation)."""
+        if sensor_config is None:
+            sensor_config = SensorConfig.build_no_sensors()
+        with open(file_path, "rb") as f:
+            scene_data = pickle.load(f)
+        scene_metadata = SceneMetadata(**scene_data["scene_metadata"])
+        map_api = cls._build_map_api(scene_metadata.map_name)
+        scene_frames: List[Frame] = []
+        for frame_idx, frame_data in enumerate(scene_data["frames"]):
+            sensor_names = sensor_config.get_sensors_at_iteration(frame_idx)
+            lidar_path = Path(frame_data["lidar_path"]) if frame_data["lidar_path"] else None
+            try:
+                lidar = Lidar.from_paths(
+                    sensor_blobs_path=sensor_blobs_path,
+                    lidar_path=lidar_path,
+                    sensor_names=sensor_names,
+                )
+            except Exception:
+                lidar = Lidar()
+            cameras = Cameras.from_camera_dict(
+                sensor_blobs_path=sensor_blobs_path,
+                camera_dict=frame_data["camera_dict"],
+                sensor_names=sensor_names,
+            )
+            scene_frames.append(Frame(
+                token=frame_data["token"],
+                timestamp=frame_data["timestamp"],
+                roadblock_ids=frame_data["roadblock_ids"],
+                traffic_lights=frame_data["traffic_lights"],
+                annotations=Annotations(**frame_data["annotations"]),
+                ego_status=EgoStatus(**frame_data["ego_status"]),
+                lidar=lidar,
+                cameras=cameras,
+            ))
+        return Scene(scene_metadata=scene_metadata, map_api=map_api, frames=scene_frames)
+
 
 @dataclass
 class SceneFilter:
@@ -506,6 +558,11 @@ class SceneFilter:
     max_scenes: Optional[int] = None
     log_names: Optional[List[str]] = None
     tokens: Optional[List[str]] = None
+
+    include_synthetic_scenes: bool = False
+    synthetic_scene_tokens: Optional[List[str]] = None
+    reactive_synthetic_initial_tokens: Optional[List[str]] = None
+    non_reactive_synthetic_initial_tokens: Optional[List[str]] = None
     # TODO: expand filter options
 
     def __post_init__(self):
@@ -590,10 +647,33 @@ class PDMResults:
 
     no_at_fault_collisions: float
     drivable_area_compliance: float
+    driving_direction_compliance: float
+    traffic_light_compliance: float
 
     ego_progress: float
     time_to_collision_within_bound: float
-    comfort: float
-    driving_direction_compliance: float
+    lane_keeping: float
+    history_comfort: float
 
-    score: float
+    multiplicative_metrics_prod: float
+    weighted_metrics: npt.NDArray[np.float64]
+    weighted_metrics_array: npt.NDArray[np.float64]
+
+    pdm_score: float
+
+    @classmethod
+    def get_empty_results(cls) -> "PDMResults":
+        return PDMResults(
+            no_at_fault_collisions=np.nan,
+            drivable_area_compliance=np.nan,
+            driving_direction_compliance=np.nan,
+            traffic_light_compliance=np.nan,
+            ego_progress=np.nan,
+            time_to_collision_within_bound=np.nan,
+            lane_keeping=np.nan,
+            history_comfort=np.nan,
+            multiplicative_metrics_prod=np.nan,
+            weighted_metrics=np.nan,
+            weighted_metrics_array=np.nan,
+            pdm_score=np.nan,
+        )
