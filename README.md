@@ -356,9 +356,9 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_create_submission_pickle_w
     agent.config.area_pred=false \
     agent.config.agent_pred=false \
     agent.config.ref_num=4 \
-    agent.config.noc=10.2 \
-    agent.config.dac=12.5\
-    agent.config.ddc=6.0 \
+    agent.config.noc=10 \
+    agent.config.dac=13 \
+    agent.config.ddc=6 \
     agent.config.ttc=14 \
     agent.config.ep=15 \
     agent.config.comfort=2.1 \
