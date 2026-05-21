@@ -18,6 +18,7 @@ from .drivor_features import DrivoRFeatureBuilder
 import sys
 from omegaconf import OmegaConf
 import math
+import time
 
 class LitProgressBar(ProgressBar):
 
@@ -30,16 +31,23 @@ class LitProgressBar(ProgressBar):
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
-        if batch_idx%100 == 0:
+        if batch_idx%100 == 0 and trainer.global_rank == 0:
             print(f"Epoch {trainer.current_epoch} - train {batch_idx} / {self.total_train_batches} - {self.get_metrics(trainer, pl_module)}")
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
-        if batch_idx%100 == 0:
+        if batch_idx%100 == 0 and trainer.global_rank == 0:
             print(f"Epoch {trainer.current_epoch} - val {batch_idx} / {self.total_train_batches} - {self.get_metrics(trainer, pl_module)}")
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        super().on_train_epoch_start(trainer, pl_module)
+        self._epoch_start_time = time.time()
 
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_train_epoch_end(self, pl_module)
+        if trainer.global_rank != 0:
+            return
+        elapsed = time.time() - self._epoch_start_time
         metrics = self.get_metrics(trainer, pl_module)
         train_metrics = dict()
         val_metrics = dict()
@@ -51,7 +59,7 @@ class LitProgressBar(ProgressBar):
                 val_metrics[k]=v
             else:
                 other_metrics[k]=v
-        print(f"\n###########  Epoch {trainer.current_epoch} ##########")
+        print(f"\n###########  Epoch {trainer.current_epoch} — {elapsed/60:.1f} min ##########")
         for k,v in train_metrics.items():
             print(f"{k},{v:.3f}")
         for k,v in val_metrics.items():
@@ -183,7 +191,7 @@ class DrivoRAgent(AbstractAgent):
     def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         return self._drivor_model(features)
 
-    def compute_score(self, targets, proposals, test=True):
+    def compute_score(self, targets, proposals, test=True, real_mask=None):
         if self.training:
             metric_cache_paths = self.train_metric_cache_paths
             metric_cache_paths_synthetic = self.train_metric_cache_paths_synthetic
@@ -197,10 +205,14 @@ class DrivoRAgent(AbstractAgent):
         n = proposals.shape[1]
         device = proposals.device
 
-        # Build data_points only for tokens present in a cache; track valid indices
+        # Build data_points only for tokens present in a cache; track valid indices.
+        # Sim samples (real_mask[i] == False) are skipped explicitly so they receive
+        # zero scores rather than a misleading signal from a cache miss.
         data_points = []
         valid_indices = []
         for i, (token, poses) in enumerate(zip(targets["token"], proposals.cpu().numpy())):
+            if real_mask is not None and not real_mask[i].item():
+                continue  # sim sample — no metric cache, skip cleanly
             if token in metric_cache_paths:
                 data_points.append({"token": metric_cache_paths[token], "poses": poses, "test": test})
                 valid_indices.append(i)
@@ -250,7 +262,10 @@ class DrivoRAgent(AbstractAgent):
             targets: Dict[str, torch.Tensor],
             pred: Dict[str, torch.Tensor],
     ) -> Dict:
-        return self.loss(targets, pred, self._config, self.compute_score)
+        real_mask = features.get("real", None)
+        def scoring_fn(targets, proposals, test=False):
+            return self.compute_score(targets, proposals, test=test, real_mask=real_mask)
+        return self.loss(targets, pred, self._config, scoring_fn)
 
     def get_optimizers(self):
 
@@ -305,7 +320,7 @@ class DrivoRAgent(AbstractAgent):
                                         )
 
         checkpoint_cb = ModelCheckpoint(save_last=True, filename='epoch{epoch}-step{step}',
-                                        auto_insert_metric_name=False)
+                                        auto_insert_metric_name=False, save_on_train_epoch_end=True)
 
         lr_monitor = LearningRateMonitor(logging_interval="step", 
                                             log_momentum=False,

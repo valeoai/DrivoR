@@ -6,7 +6,7 @@
 
 ## Scale ntasks with gpus
 #SBATCH --mem=240gb
-#SBATCH --gres=gpu:rtxa5000:4
+#SBATCH --gres=gpu:rtxa5000:8
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 
@@ -28,11 +28,12 @@ export OPENSCENE_DATA_ROOT="$HOME/navsim/dataset"
 export NAVSIM_TRAIN_METRIC_CACHE="$HOME/navsim/metric_cache_trainval"
 
 export HYDRA_FULL_ERROR=1
+export PYTHONUNBUFFERED=1
 
 # Change to DrivoR root so relative backbone weight paths in drivoR.yaml resolve correctly
 cd $NAVSIM_DEVKIT_ROOT
 
-EXPERIMENT=5-11_5-17
+EXPERIMENT=5-18_5-24
 AGENT=drivoR
 
 # Resume from a specific checkpoint by setting RESUME_CHECKPOINT to its path.
@@ -45,7 +46,7 @@ RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs
 SIM_LOG_PATH=$HOME/carla_garage_data_navsim_converted/openscene_meta_datas
 SIM_SCENES_PATH=$HOME/carla_garage_data_navsim_converted/synthetic_scene_pickles # unused?
 SIM_SENSOR_PATH=$HOME/carla_garage_data_navsim_converted/sensor_blobs
-SIM_DATA_RATIO=1
+SIM_DATA_RATIO=0.5
 # ────────────────────────────────────────────────────────────────────────────
 
 # Build optional sim args and enable adapter when sim data is present
@@ -77,15 +78,17 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     train_test_split=navtrain \
     cache_path=null \
     use_cache_without_dataset=false \
-    trainer.params.devices=4 \
+    trainer.params.devices=8 \
     trainer.params.max_epochs=40 \
-    dataloader.params.prefetch_factor=1 \
-    dataloader.params.batch_size=5 \
-    dataloader.params.num_workers=2 \
+    trainer.params.check_val_every_n_epoch=100 \
+    trainer.params.strategy=ddp \
+    dataloader.params.prefetch_factor=2 \
+    dataloader.params.batch_size=10 \
+    dataloader.params.num_workers=4 \
     dataloader.params.pin_memory=false \
     agent.lr_args.name=AdamW \
     agent.lr_args.base_lr=0.0002 \
-    agent.num_gpus=4 \
+    agent.num_gpus=8 \
     agent.progress_bar=false \
     agent.config.refiner_ls_values=0.0 \
     agent.config.image_backbone.focus_front_cam=false \
@@ -99,9 +102,10 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     agent.config.ref_num=4 \
     agent.config.ray_threads=2 \
     agent.config.use_adapter=$USE_ADAPTER \
-    agent.config.use_matrix_adapter=false \
-    agent.config.freeze_all_except_adapter=true \
+    agent.config.use_matrix_adapter=true \
+    agent.config.freeze_perception=true \
     agent.loss.prev_weight=0.0 \
+    trainer.params.limit_train_batches=500 \
     seed=2 \
     $SIM_ARGS
 # $USE_MATRIX_ADAPTER

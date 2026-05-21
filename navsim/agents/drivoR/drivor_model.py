@@ -61,10 +61,6 @@ class DrivoRModel(nn.Module):
                 self.image_backbone = ImgEncoder(config_image_backbone)
             self.scene_embeds = nn.Parameter(torch.randn(1, self.num_cams, self._config.num_scene_tokens, self.image_backbone.num_features)*1e-6, requires_grad=True)
 
-            if self._config.get("freeze_perception", False):
-                for param in self.image_backbone.parameters():
-                    param.requires_grad = False
-
             if self._config.get("use_adapter", False):
                 output_size = (config["image_size"][1], config["image_size"][0])
                 if self._config.get("use_matrix_adapter", False):
@@ -121,6 +117,28 @@ class DrivoRModel(nn.Module):
 
         self.b2d=config.b2d
 
+        if self._config.get("freeze_perception", False):
+            if hasattr(self, "image_backbone"):
+                for param in self.image_backbone.parameters():
+                    param.requires_grad = False
+            if hasattr(self, "lidar_backbone"):
+                for param in self.lidar_backbone.parameters():
+                    param.requires_grad = False
+            # scene_embeds / lidar_scene_embeds are standalone parameters that
+            # feed into the backbone. HFDINOv2Encoder ignores scene_tokens, so
+            # these would be trainable-but-unused and trigger a DDP error.
+            if hasattr(self, "scene_embeds"):
+                self.scene_embeds.requires_grad = False
+            if hasattr(self, "lidar_scene_embeds"):
+                self.lidar_scene_embeds.requires_grad = False
+            # Adapter backprop flows through the frozen ViT; recompute activations
+            # to avoid storing all block outputs in VRAM on A5000s.
+            if hasattr(self, "image_backbone") and hasattr(self.image_backbone, "model"):
+                _m = self.image_backbone.model
+                _vit = _m.lora_vit if hasattr(_m, "lora_vit") else _m
+                _vit.grad_checkpointing = True
+                print("[freeze_perception] gradient checkpointing enabled on image backbone")
+
         if self._config.get("freeze_all_except_adapter", False):
             for param in self.parameters():
                 param.requires_grad = False
@@ -171,20 +189,55 @@ class DrivoRModel(nn.Module):
 
             # ── V2R adapter: translate sim images into real-image space ──────────
             # `real` is a (B,) integer tensor: 1 = real sample, 0 = sim sample.
+            # Real samples have no trainable parameters in their forward path
+            # (adapter is skipped), so we run their backbone pass under no_grad
+            # to avoid paying gradient-checkpointing cost for 75% of the batch.
             if self._config.get("use_adapter", False):
                 real = features.get(
                     "real", torch.ones(batch_size, dtype=torch.long, device=img.device)
                 )
-                if (real == 0).any():
-                    B_img, N_img, C_img, H_img, W_img = img.shape
-                    img_flat = img.reshape(B_img * N_img, C_img, H_img, W_img)
-                    sim_mask = real.repeat_interleave(N_img) == 0  # (B*N,)
-                    sim_idx = sim_mask.nonzero(as_tuple=False).view(-1)
-                    adapted = self.adapter(img_flat[sim_idx].contiguous())
-                    img_flat = img_flat.index_put((sim_idx,), adapted)
-                    img = img_flat.view(B_img, N_img, C_img, H_img, W_img)
+                sim_mask = (real == 0)
+                B_img, N_img, C_img, H_img, W_img = img.shape
 
-            image_scene_tokens = self.image_backbone(img, scene_tokens)
+                # When backbone is frozen, real images produce no gradient — skip
+                # gradient checkpointing overhead by running them under no_grad.
+                # When backbone is trainable, real images must run with grad enabled.
+                _freeze_all = self._config.get("freeze_all_except_adapter", False)
+
+                if not sim_mask.any():
+                    # All real — adapter not involved.
+                    ctx = torch.no_grad() if _freeze_all else torch.enable_grad()
+                    with ctx:
+                        image_scene_tokens = self.image_backbone(img, scene_tokens)
+                else:
+                    sim_idx = sim_mask.nonzero(as_tuple=False).view(-1)
+
+                    # Apply adapter to sim images only.
+                    sim_flat = img[sim_idx].reshape(len(sim_idx) * N_img, C_img, H_img, W_img)
+                    sim_img = self.adapter(sim_flat.contiguous()).view(len(sim_idx), N_img, C_img, H_img, W_img)
+
+                    # Sim path: needs gradient for adapter backprop.
+                    sim_tokens = self.image_backbone(sim_img, scene_tokens[sim_idx])
+
+                    real_mask = ~sim_mask
+                    if real_mask.any():
+                        real_idx = real_mask.nonzero(as_tuple=False).view(-1)
+                        ctx = torch.no_grad() if _freeze_all else torch.enable_grad()
+                        with ctx:
+                            real_tokens = self.image_backbone(img[real_idx], scene_tokens[real_idx])
+
+                        # Reconstruct full batch in original order.
+                        image_scene_tokens = torch.zeros(
+                            batch_size, *sim_tokens.shape[1:],
+                            device=img.device, dtype=sim_tokens.dtype
+                        )
+                        image_scene_tokens = image_scene_tokens.index_put((real_idx,), real_tokens)
+                        image_scene_tokens = image_scene_tokens.index_put((sim_idx,), sim_tokens)
+                    else:
+                        # All sim.
+                        image_scene_tokens = sim_tokens
+            else:
+                image_scene_tokens = self.image_backbone(img, scene_tokens)
 
             log.debug(f"Backbone image - {image_scene_tokens.shape}")
             scene_features.append(image_scene_tokens)
@@ -221,7 +274,7 @@ class DrivoRModel(nn.Module):
         output["proposals"] = proposals
         output["proposal_list"] = proposal_list
 
-        if self._config.get("freeze_all_except_adapter", False) and hasattr(self, "adapter"):
+        if (self._config.get("freeze_all_except_adapter", False) or self._config.get("freeze_perception", False)) and hasattr(self, "adapter"):
             output["_adapter_anchor"] = 0.0 * sum(
                 p.sum() for p in self.adapter.parameters()
             )

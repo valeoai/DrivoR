@@ -173,27 +173,6 @@ def main(cfg: DictConfig) -> None:
 
     logger.info("Building Trainer")
 
-    # automatically resume training
-    # find latest ckpt
-    import glob
-    def find_latest_checkpoint(search_pattern):
-        # List all files matching the pattern
-        list_of_files = glob.glob(search_pattern, recursive=True)
-        # Find the file with the latest modification time
-        if not list_of_files:
-            return None
-        latest_file = max(list_of_files, key=os.path.getmtime)
-        return latest_file
-
-
-    if cfg.train_ckpt_path is None:
-        # Pattern to match all .ckpt files in the base_path recursively
-        search_pattern = "/".join(str(cfg.output_dir).split("/")[:-1]) + "/*/lightning_logs/version_*/checkpoints/" + '*.ckpt'
-        print("/".join(str(cfg.output_dir).split("/")[:-1]))
-        print("search_pattern ", search_pattern)
-        cfg.train_ckpt_path = find_latest_checkpoint(search_pattern)
-        print("cfg.train_ckpt_path ", cfg.train_ckpt_path)
-
     trainer = pl.Trainer(**cfg.trainer.params, callbacks=agent.get_training_callbacks())
 
     if cfg.validation_run:
