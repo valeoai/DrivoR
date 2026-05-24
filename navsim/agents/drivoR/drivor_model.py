@@ -156,6 +156,17 @@ class DrivoRModel(nn.Module):
                 _vit.grad_checkpointing = True
                 print("[freeze_all_except_adapter] gradient checkpointing enabled on image backbone")
 
+        # Fully unfrozen mode: backbone is trainable, so activations from all ViT
+        # blocks must be stored for backward — exhausts A5000 VRAM at batch_size=10.
+        # Enable gradient checkpointing to recompute activations instead of storing them.
+        if (not self._config.get("freeze_perception", False)
+                and not self._config.get("freeze_all_except_adapter", False)):
+            if hasattr(self, "image_backbone") and hasattr(self.image_backbone, "model"):
+                _m = self.image_backbone.model
+                _vit = _m.lora_vit if hasattr(_m, "lora_vit") else _m
+                _vit.grad_checkpointing = True
+                print("[unfrozen] gradient checkpointing enabled on image backbone")
+
     def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         
         # ego status and initial traj tokens
@@ -274,7 +285,7 @@ class DrivoRModel(nn.Module):
         output["proposals"] = proposals
         output["proposal_list"] = proposal_list
 
-        if (self._config.get("freeze_all_except_adapter", False) or self._config.get("freeze_perception", False)) and hasattr(self, "adapter"):
+        if hasattr(self, "adapter"):
             output["_adapter_anchor"] = 0.0 * sum(
                 p.sum() for p in self.adapter.parameters()
             )

@@ -42,6 +42,8 @@ AGENT=drivoR
 # RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav1_30epochs_with_134k_simscale_bis_103ktrainval.pth
 RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs_with_134k_simscale_85ktrain_54.6.pth
 
+# RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_percept/lightning_logs/version_6861133/last.ckpt
+
 # ── Simulator data config ────────────────────────────────────────────────────
 SIM_LOG_PATH=$HOME/carla_garage_data_navsim_converted/openscene_meta_datas
 SIM_SCENES_PATH=$HOME/carla_garage_data_navsim_converted/synthetic_scene_pickles # unused?
@@ -92,7 +94,7 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     agent.progress_bar=false \
     agent.config.refiner_ls_values=0.0 \
     agent.config.image_backbone.focus_front_cam=false \
-    agent.config.image_backbone.use_hf_dinov2=true \
+    agent.config.image_backbone.use_hf_dinov2=false \
     agent.config.one_token_per_traj=true \
     agent.config.refiner_num_heads=1 \
     agent.config.tf_d_model=256 \

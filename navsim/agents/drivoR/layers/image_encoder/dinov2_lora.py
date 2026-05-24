@@ -77,7 +77,7 @@ class timm_ViT(VisionTransformer):
             # If mask provided, we need to apply blocks one by one
             for blk in self.blocks:
                 x = blk(x, attn_mask=attn_mask)
-        elif self.grad_checkpointing and not torch.jit.is_scripting():
+        elif self.grad_checkpointing and not torch.jit.is_scripting() and self.training:
             for blk in self.blocks:
                 x = checkpoint(blk, x, use_reentrant=False)
         else:
