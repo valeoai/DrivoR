@@ -112,7 +112,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
             force_cache_computation=cfg.get("force_sim_cache_computation", False),
         ))
         # subsample sim dataset to sim_data_ratio * len(real)
-        n_sim = min(len(sim_dataset), int(sim_data_ratio * len(train_data._dataset)))
+        n_sim = len(sim_dataset)
         indices = torch.randperm(len(sim_dataset))[:n_sim].tolist()
         sim_dataset = torch.utils.data.Subset(sim_dataset, indices)
         logger.info(f"Mixing {n_sim} sim samples with {len(train_data._dataset)} real samples (ratio={sim_data_ratio})")
@@ -166,6 +166,9 @@ def main(cfg: DictConfig) -> None:
         train_data, val_data = build_datasets(cfg, agent)
 
     logger.info("Building Datasets")
+    logger.info("  real data: log=%s  blobs=%s", cfg.navsim_log_path, cfg.sensor_blobs_path)
+    if cfg.get("sim_log_path"):
+        logger.info("  sim data:  log=%s  blobs=%s  ratio=%s", cfg.sim_log_path, cfg.get("sim_sensor_path") or cfg.sensor_blobs_path, cfg.get("sim_data_ratio"))
     train_dataloader = DataLoader(train_data, **cfg.dataloader.params, shuffle=True,drop_last=True)
     logger.info("Num training samples: %d", len(train_data))
     val_dataloader = DataLoader(val_data, **cfg.dataloader.params, shuffle=False,drop_last=True)

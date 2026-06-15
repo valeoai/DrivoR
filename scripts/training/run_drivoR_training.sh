@@ -33,7 +33,7 @@ export PYTHONUNBUFFERED=1
 # Change to DrivoR root so relative backbone weight paths in drivoR.yaml resolve correctly
 cd $NAVSIM_DEVKIT_ROOT
 
-EXPERIMENT=5-18_5-24
+EXPERIMENT=6-20
 AGENT=drivoR
 
 # Resume from a specific checkpoint by setting RESUME_CHECKPOINT to its path.
@@ -45,10 +45,10 @@ RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs
 # RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_percept/lightning_logs/version_6861133/last.ckpt
 
 # ── Simulator data config ────────────────────────────────────────────────────
-SIM_LOG_PATH=$HOME/carla_garage_data_navsim_converted/openscene_meta_datas
-SIM_SCENES_PATH=$HOME/carla_garage_data_navsim_converted/synthetic_scene_pickles # unused?
-SIM_SENSOR_PATH=$HOME/carla_garage_data_navsim_converted/sensor_blobs
-SIM_DATA_RATIO=0.5
+SIM_LOG_PATH=$HOME/carla_data_split/openscene_meta_datas
+SIM_SCENES_PATH=$HOME/carla_data_split/synthetic_scene_pickles # unused?
+SIM_SENSOR_PATH=$HOME/carla_data_split/sensor_blobs
+SIM_DATA_RATIO=1
 # ────────────────────────────────────────────────────────────────────────────
 
 # Build optional sim args and enable adapter when sim data is present
@@ -104,7 +104,7 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     agent.config.ref_num=4 \
     agent.config.ray_threads=2 \
     agent.config.use_adapter=$USE_ADAPTER \
-    agent.config.use_matrix_adapter=true \
+    agent.config.use_matrix_adapter=false \
     agent.config.freeze_perception=true \
     agent.loss.prev_weight=0.0 \
     trainer.params.limit_train_batches=500 \

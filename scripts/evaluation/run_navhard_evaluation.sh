@@ -44,7 +44,8 @@ TRAIN_TEST_SPLIT=navhard_two_stage
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_matrix2/lightning_logs/version_6870642/checkpoints/last.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_matrix3/lightning_logs/version_6874513/checkpoints/last.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_percept_adjust/lightning_logs/version_6876024/checkpoints/last.ckpt
-CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_matrix4/lightning_logs/version_6877327/checkpoints/last.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_matrix4/lightning_logs/version_6877327/checkpoints/last.ckpt
+CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_carla_data_split/lightning_logs/version_7006550/checkpoints/last.ckpt
 METRIC_CACHE_PATH=/fs/nexus-projects/sim2real/aliu/navsim/metric_cache_navhard
 NAVHARD_DATA_ROOT=$OPENSCENE_DATA_ROOT/navhard_two_stage
 EXPERIMENT=drivoR_navhard_eval
@@ -74,5 +75,5 @@ python /fs/nexus-projects/sim2real/aliu/DrivoR/navsim/planning/script/run_pdm_sc
     agent.config.ep=15 \
     agent.config.comfort=2 \
     agent.config.use_adapter=true \
-    agent.config.use_matrix_adapter=false \
+    agent.config.use_matrix_adapter=true \
     agent.config.image_backbone.use_hf_dinov2=false \

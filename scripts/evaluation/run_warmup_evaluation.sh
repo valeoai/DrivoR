@@ -32,7 +32,8 @@ TRAIN_TEST_SPLIT=warmup_test_e2e
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav1_30epochs_with_134k_simscale_bis_103ktrainval.pth
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/training_drivoR_Nav1_traj_long_25epochs/05.03_22.26/lightning_logs/version_0/checkpoints/best-epoch32-step60363.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs_with_134k_simscale_85ktrain_54.6.pth
-CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/training_drivoR_Nav1_traj_long_25epochs/nav2_adapt_dinov2fe/lightning_logs/version_0/checkpoints/best-epoch30-step57965.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/training_drivoR_Nav1_traj_long_25epochs/nav2_adapt_dinov2fe/lightning_logs/version_0/checkpoints/best-epoch30-step57965.ckpt
+CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_carla_data_split/lightning_logs/version_7006550/checkpoints/last.ckpt
 METRIC_CACHE_PATH=/fs/nexus-projects/sim2real/aliu/DrivoR/metric_cache_warmup
 
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py \
@@ -47,7 +48,8 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py \
     navsim_log_path=$OPENSCENE_DATA_ROOT/navsim_logs/mini \
     sensor_blobs_path=$OPENSCENE_DATA_ROOT/mini_sensor_blobs/mini \
     agent.config.use_adapter=true \
-    agent.config.image_backbone.use_hf_dinov2=true \
+    agent.config.use_matrix_adapter=true \
+    agent.config.image_backbone.use_hf_dinov2=false \
     agent.config.image_backbone.hf_model_name=facebook/dinov2-small \
     agent.config.proposal_num=64 \
     agent.config.refiner_ls_values=0.0 \

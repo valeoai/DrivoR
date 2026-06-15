@@ -43,9 +43,8 @@ AGENT=drivoR
 RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs_with_134k_simscale_85ktrain_54.6.pth
 
 # ── Simulator data config ────────────────────────────────────────────────────
-SIM_LOG_PATH=$HOME/carla_garage_data_navsim_converted/openscene_meta_datas
-SIM_SCENES_PATH=$HOME/carla_garage_data_navsim_converted/synthetic_scene_pickles # unused?
-SIM_SENSOR_PATH=$HOME/carla_garage_data_navsim_converted/sensor_blobs
+SIM_LOG_PATH=$HOME/carla_test/openscene_meta_datas
+SIM_SENSOR_PATH=$HOME/carla_test/sensor_blobs
 SIM_DATA_RATIO=0.5
 # ────────────────────────────────────────────────────────────────────────────
 

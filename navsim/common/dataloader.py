@@ -159,6 +159,7 @@ class SceneLoader:
         sensor_blobs_path: Path,
         scene_filter: SceneFilter,
         sensor_config: SensorConfig = SensorConfig.build_no_sensors(),
+        validate_sensor_paths: bool = False,
     ):
         """
         Initializes the scene data loader.
@@ -166,6 +167,7 @@ class SceneLoader:
         :param sensor_blobs_path: root directory of sensor data
         :param scene_filter: dataclass for scene filtering specification
         :param sensor_config: dataclass for sensor loading specification, defaults to no sensors
+        :param validate_sensor_paths: drop scenes whose camera files (per sensor_config) are missing on disk
         """
 
         if "synthetic" in str(data_path):
