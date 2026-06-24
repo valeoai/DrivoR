@@ -178,9 +178,11 @@ class PDMScorer:
         normalized_progress[(~fast_mask) & (multiplicate_metric_scores == 0)] = 0
         self._weighted_metrics[WeightedMetricIndex.PROGRESS] = normalized_progress
 
-        # accumulate weighted metrics
+        # accumulate weighted metrics; clamp to [0,1] so sentinel values (e.g.
+        # TTC=2.0 when the exception branch fires) don't inflate the score above 1.
         weighted_metrics_array = self._config.weighted_metrics_array
-        weighted_metric_scores = (self._weighted_metrics * weighted_metrics_array[..., None]).sum(axis=0)
+        weighted_metrics_clipped = np.clip(self._weighted_metrics, 0.0, 1.0)
+        weighted_metric_scores = (weighted_metrics_clipped * weighted_metrics_array[..., None]).sum(axis=0)
         weighted_metric_scores /= weighted_metrics_array.sum()
 
         # calculate final scores
@@ -233,7 +235,7 @@ class PDMScorer:
             ),
             dtype=np.bool_,
         )
-        self._multi_metrics = np.zeros((len(MultiMetricIndex), self._num_proposals), dtype=np.float64)
+        self._multi_metrics = np.ones((len(MultiMetricIndex), self._num_proposals), dtype=np.float64)
         self._weighted_metrics = np.zeros((len(WeightedMetricIndex), self._num_proposals), dtype=np.float64)
         self._progress_raw = np.zeros(self._num_proposals, dtype=np.float64)
 

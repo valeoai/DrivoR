@@ -167,6 +167,11 @@ class DrivoRModel(nn.Module):
                 _vit.grad_checkpointing = True
                 print("[unfrozen] gradient checkpointing enabled on image backbone")
 
+    # {FORWARD}
+    # (drivor_agent forward() -> drivor_model forward())
+    # Initialize ego encoding, image backbone, lidar backbone. Generates initial
+    # set of trajectory proposals and refines when through the transformer decoder.
+    # Final proposals are scored. Pick best proposal as final trajectory.
     def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         
         # ego status and initial traj tokens

@@ -27,7 +27,12 @@ class AgentLightningModule(pl.LightningModule):
         self.agent = agent
         self.checkpoint_file=None
         self.for_viz = for_viz
+        self._train_real_total = 0
+        self._train_sim_total = 0
 
+    # {STEP}
+    # Do a forward pass on drivor agent with the features. Then compute loss against 
+    # targets. Log all sub-losses in loss_dict and return overall loss
     def _step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], logging_prefix: str) -> Tensor:
         """
         Propagates the model forward and backwards and computes/logs losses and metrics.
@@ -41,20 +46,50 @@ class AgentLightningModule(pl.LightningModule):
         loss_dict = self.agent.compute_loss(features, targets, prediction)
 
         if type(loss_dict) is dict:
-            for key,value in loss_dict.items():
-                self.log(f"{logging_prefix}/"+key, value, on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
+            epoch_only_keys = {"best_score"}
+            for key, value in loss_dict.items():
+                if key in epoch_only_keys:
+                    self.log(f"{logging_prefix}/{key}", value, on_step=False, on_epoch=True,
+                             prog_bar=True, sync_dist=True)
+                else:
+                    self.log(f"{logging_prefix}/{key}", value, on_step=True, on_epoch=False,
+                             prog_bar=True, sync_dist=True)
             return loss_dict["loss"]
         else:
             return loss_dict
 
+    # {TRAINING STEP} -> {STEP}
+    # PyTorch Lightning directs trainer.fit() into training_step function in module.
+    # Mostly a wrapper to call _step() on batch. Do some logging on number of real counts
+    # and not real counts in features.
     def training_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int) -> Tensor:
         """
         Step called on training samples
         :param batch: tuple of dictionaries for feature and target tensors (batched)
         :param batch_idx: index of batch (ignored)
         :return: scalar loss
+        One epoch iterates through all real training samples and all (subsampled) sim samples exactly once, interleaved randomly.
         """
+        features, _ = batch
+        if "real" in features:
+            real_mask = features["real"]
+            self._train_real_total += int(real_mask.sum().item())
+            self._train_sim_total += int((~real_mask).sum().item())
         return self._step(batch, "train")
+
+    def on_train_epoch_end(self) -> None:
+        if self.global_rank == 0:
+            total = self._train_real_total + self._train_sim_total
+            real_pct = 100.0 * self._train_real_total / total if total > 0 else 0.0
+            sim_pct = 100.0 * self._train_sim_total / total if total > 0 else 0.0
+            print(
+                f"\n[Epoch {self.current_epoch} | rank {self.global_rank}] Data mix summary:\n"
+                f"  real : {self._train_real_total:>6d}  ({real_pct:.1f}%)\n"
+                f"  sim  : {self._train_sim_total:>6d}  ({sim_pct:.1f}%)\n"
+                f"  total: {total:>6d}"
+            )
+        self._train_real_total = 0
+        self._train_sim_total = 0
 
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
         """

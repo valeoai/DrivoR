@@ -43,8 +43,8 @@ AGENT=drivoR
 RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs_with_134k_simscale_85ktrain_54.6.pth
 
 # ── Simulator data config ────────────────────────────────────────────────────
-SIM_LOG_PATH=$HOME/carla_test/openscene_meta_datas
-SIM_SENSOR_PATH=$HOME/carla_test/sensor_blobs
+SIM_LOG_PATH=$HOME/carla_data_split/openscene_meta_datas
+SIM_SENSOR_PATH=$HOME/carla_data_split/sensor_blobs
 SIM_DATA_RATIO=0.5
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -76,21 +76,23 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     train_test_split=navtrain \
     cache_path=null \
     use_cache_without_dataset=false \
-    trainer.params.devices=8 \
-    trainer.params.max_epochs=40 \
-    trainer.params.check_val_every_n_epoch=100 \
-    trainer.params.strategy=ddp \
+    trainer.params.devices=1 \
+    trainer.params.max_epochs=33 \
+    trainer.params.limit_train_batches=10 \
+    trainer.params.check_val_every_n_epoch=1 \
+    trainer.params.limit_val_batches=5 \
+    trainer.params.strategy=auto \
     dataloader.params.prefetch_factor=2 \
     dataloader.params.batch_size=10 \
-    dataloader.params.num_workers=4 \
+    dataloader.params.num_workers=2 \
     dataloader.params.pin_memory=false \
     agent.lr_args.name=AdamW \
     agent.lr_args.base_lr=0.0002 \
-    agent.num_gpus=8 \
+    agent.num_gpus=1 \
     agent.progress_bar=false \
     agent.config.refiner_ls_values=0.0 \
     agent.config.image_backbone.focus_front_cam=false \
-    agent.config.image_backbone.use_hf_dinov2=true \
+    agent.config.image_backbone.use_hf_dinov2=false \
     agent.config.one_token_per_traj=true \
     agent.config.refiner_num_heads=1 \
     agent.config.tf_d_model=256 \
@@ -100,11 +102,9 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     agent.config.ref_num=4 \
     agent.config.ray_threads=2 \
     agent.config.use_adapter=$USE_ADAPTER \
-    agent.config.use_matrix_adapter=true \
+    agent.config.use_matrix_adapter=false \
     agent.config.freeze_perception=true \
     agent.loss.prev_weight=0.0 \
-    trainer.params.limit_train_batches=100 \
-    trainer.params.limit_val_batches=10 \
     seed=2 \
     $SIM_ARGS
 # $USE_MATRIX_ADAPTER

@@ -15,7 +15,6 @@ from navsim.common.dataloader import MetricCacheLoader
 from navsim.common.dataclasses import SensorConfig
 from .drivor_features import DrivoRTargetBuilder
 from .drivor_features import DrivoRFeatureBuilder
-import sys
 from omegaconf import OmegaConf
 import math
 import time
@@ -247,8 +246,13 @@ class DrivoRAgent(AbstractAgent):
         final_scores = target_scores[:, :, -1]
         best_scores = torch.amax(final_scores, dim=-1)
 
+        # Average only over items that were actually scored; sim samples and
+        # cache misses remain zero in best_scores but should not dilute the mean.
+        valid_idx_tensor = torch.tensor(valid_indices, device=device)
+        best_score_mean = best_scores[valid_idx_tensor].mean() if valid_indices else best_scores.new_tensor(0.0)
+
         if test:
-            return final_scores[:, 0].mean(), best_scores.mean(), final_scores, l2_2s.mean(), target_scores[:, 0]
+            return final_scores[:, 0].mean(), best_score_mean, final_scores, l2_2s.mean(), target_scores[:, 0]
         else:
             key_agent_corners = torch.FloatTensor(np.stack([res[1] for res in valid_res])).to(device)
             key_agent_labels = torch.BoolTensor(np.stack([res[2] for res in valid_res])).to(device)
@@ -319,7 +323,7 @@ class DrivoRAgent(AbstractAgent):
                                         mode="max"
                                         )
 
-        checkpoint_cb = ModelCheckpoint(save_last=True, filename='epoch{epoch}-step{step}',
+        checkpoint_cb = ModelCheckpoint(save_last=False, filename='epoch{epoch}-step{step}',
                                         auto_insert_metric_name=False, save_on_train_epoch_end=True)
 
         lr_monitor = LearningRateMonitor(logging_interval="step", 

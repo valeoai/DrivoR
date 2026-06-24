@@ -30,6 +30,11 @@ CONFIG_NAME = "default_training"
 def dist_ready():
     return dist.is_available() and dist.is_initialized()
 
+# {BUILD DATASETS}
+# Builds SceneFilter configs for train and val splits. This filters by log name, token, etc.
+# Constructs a SceneLoader (custom dataloader for navsim data) for each split and applied wrapper
+# to differentiate real vs sim. Same applied for sim data when sim_data_ratio > 0. Randomly 
+# subsamples both data streams to match ratio and concatenates them.
 def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]:
     """
     Builds training and validation datasets from omega config
@@ -111,16 +116,24 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
             cache_path=cfg.get("sim_cache_path", None),
             force_cache_computation=cfg.get("force_sim_cache_computation", False),
         ))
-        # subsample sim dataset to sim_data_ratio * len(real)
-        n_sim = len(sim_dataset)
-        indices = torch.randperm(len(sim_dataset))[:n_sim].tolist()
-        sim_dataset = torch.utils.data.Subset(sim_dataset, indices)
-        logger.info(f"Mixing {n_sim} sim samples with {len(train_data._dataset)} real samples (ratio={sim_data_ratio})")
+        # subsample both real and sim to sim_data_ratio * len(real) each, so they match
+        n_target = int(sim_data_ratio * len(train_data._dataset))
+        n_real = min(n_target, len(train_data))
+        n_sim = min(n_target, len(sim_dataset))
+        real_indices = torch.randperm(len(train_data))[:n_real].tolist()
+        sim_indices = torch.randperm(len(sim_dataset))[:n_sim].tolist()
+        train_data = torch.utils.data.Subset(train_data, real_indices)
+        sim_dataset = torch.utils.data.Subset(sim_dataset, sim_indices)
+        logger.info(f"Mixing {n_sim} sim samples with {n_real} real samples (ratio={sim_data_ratio})")
         train_data = ConcatDataset([train_data, sim_dataset])
 
     return train_data, val_data
 
 
+# {MAIN METHOD} -> {BUILD DATASETS} -> {TRAINING STEP}
+# Hydra creates an empty cfg object and passes it to main. Initialize agent and lightning
+# module. Build train and val datasets (validation never runs). Kicks off training via 
+# trainer.fit().
 @hydra.main(config_path=CONFIG_PATH, config_name=CONFIG_NAME, version_base=None)
 def main(cfg: DictConfig) -> None:
     """

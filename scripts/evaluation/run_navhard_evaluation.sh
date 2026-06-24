@@ -45,7 +45,12 @@ TRAIN_TEST_SPLIT=navhard_two_stage
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_matrix3/lightning_logs/version_6874513/checkpoints/last.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_percept_adjust/lightning_logs/version_6876024/checkpoints/last.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_matrix4/lightning_logs/version_6877327/checkpoints/last.ckpt
-CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_carla_data_split/lightning_logs/version_7006550/checkpoints/last.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_carla_data_split/lightning_logs/version_7006550/checkpoints/last.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_w_split/lightning_logs/version_7010091/checkpoints/last.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_w_split_equal/lightning_logs/version_7012617/checkpoints/last.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_converted_db_0.5/lightning_logs/version_7016916/checkpoints/last.ckpt
+# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_split_db_0.5_500/lightning_logs/version_7016984/checkpoints/epoch39-step56510.ckpt
+CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/6-20/train_split_db_0.5_100/lightning_logs/version_7018845/checkpoints/epoch39-step52510.ckpt
 METRIC_CACHE_PATH=/fs/nexus-projects/sim2real/aliu/navsim/metric_cache_navhard
 NAVHARD_DATA_ROOT=$OPENSCENE_DATA_ROOT/navhard_two_stage
 EXPERIMENT=drivoR_navhard_eval
@@ -75,5 +80,11 @@ python /fs/nexus-projects/sim2real/aliu/DrivoR/navsim/planning/script/run_pdm_sc
     agent.config.ep=15 \
     agent.config.comfort=2 \
     agent.config.use_adapter=true \
-    agent.config.use_matrix_adapter=true \
+    agent.config.use_matrix_adapter=false \
     agent.config.image_backbone.use_hf_dinov2=false \
+
+
+# use_matrix_adapter ver: 0.3112
+# regular adapter ver: 0.2759
+# converted_db_0.5_100: 0.405
+# split_db_0.5_500: 0.3424

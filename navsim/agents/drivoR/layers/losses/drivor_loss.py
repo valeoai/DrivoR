@@ -326,7 +326,10 @@ class DrivoRLoss(torch.nn.Module):
         pdm_score = pred["pdm_score"].detach()
         top_proposals = torch.argmax(pdm_score, dim=1)
         score = final_scores[np.arange(len(final_scores)), top_proposals].mean()
-        best_score = best_scores.mean()
+        # Average only over scored (real) items; sim samples stay zero and
+        # should not dilute the metric.
+        scored_mask = best_scores > 0
+        best_score = best_scores[scored_mask].mean() if scored_mask.any() else best_scores.new_tensor(0.0)
 
         if sub_score_loss == 0:
             da_loss = ttc_loss = noc_loss = progress_loss = ddc_loss = comfort_loss = 0
@@ -354,7 +357,7 @@ class DrivoRLoss(torch.nn.Module):
             # "min_loss1": min_loss1,
             "min_loss": min_loss,
             "score": score,
-            "best_score": best_score
+            "best_score": best_score,
         }
 
         return loss_dict

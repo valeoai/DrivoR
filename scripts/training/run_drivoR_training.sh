@@ -46,9 +46,8 @@ RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs
 
 # ── Simulator data config ────────────────────────────────────────────────────
 SIM_LOG_PATH=$HOME/carla_data_split/openscene_meta_datas
-SIM_SCENES_PATH=$HOME/carla_data_split/synthetic_scene_pickles # unused?
 SIM_SENSOR_PATH=$HOME/carla_data_split/sensor_blobs
-SIM_DATA_RATIO=1
+SIM_DATA_RATIO=0.5 # sim_data_ratio of .5 now means each epoch see 50-50 of real and sim
 # ────────────────────────────────────────────────────────────────────────────
 
 # Build optional sim args and enable adapter when sim data is present
@@ -73,6 +72,13 @@ unset SLURM_NTASKS
 
 echo "USE_ADAPTER=$USE_ADAPTER"
 
+# {STARTING POINT} -> {MAIN METHOD}
+# python command that starts it all. These variables (at the moment) are the most important to keep track of
+# SIM_LOG_PATH: sim data parent directory
+# SIM_DATA_RATIO: sim_data_ratio of .5 now means each epoch see 50-50 of real and sim
+# use_matrix_adapter: whether or not to use matrix version. since it consistently gets worse results, keep it FALSE for now
+# freeze_perception: whether or not to freeze perception. setting it to false keeps whole model trainable. slightly worse results
+# limit_train_batches: 100 leads to 1000 sim and real data instances being loaded per epoch? need to check
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     agent=$AGENT \
     experiment_name=$EXPERIMENT \
@@ -81,8 +87,8 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     cache_path=null \
     use_cache_without_dataset=false \
     trainer.params.devices=8 \
-    trainer.params.max_epochs=40 \
-    trainer.params.check_val_every_n_epoch=100 \
+    trainer.params.max_epochs=35 \
+    trainer.params.check_val_every_n_epoch=1 \
     trainer.params.strategy=ddp \
     dataloader.params.prefetch_factor=2 \
     dataloader.params.batch_size=10 \
@@ -107,7 +113,6 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
     agent.config.use_matrix_adapter=false \
     agent.config.freeze_perception=true \
     agent.loss.prev_weight=0.0 \
-    trainer.params.limit_train_batches=500 \
     seed=2 \
     $SIM_ARGS
 # $USE_MATRIX_ADAPTER
