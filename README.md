@@ -167,7 +167,12 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score_multi_gpu.py \
 
 ```
 
- (ii) [NAVSIM-v2] **train for 10 epochs** (You need to use [Navsim2 repo](https://github.com/autonomousvision/navsim) for evaluation: and copy the agent files, config to the evaluation repo.):
+> [!IMPORTANT]
+> This repo is built on Nav1, so it cannot be used for evaluating Nav2, please refer to issue https://github.com/valeoai/DrivoR/issues/13 for setting up Nav2 eval. 
+As mentioned in issue https://github.com/valeoai/DrivoR/issues/47, for people who experience Os metrics, please make sure that numpy==1.26.4, AND redo the caching for navhard using official [Navsim2 repo](https://github.com/autonomousvision/navsim).
+
+(ii) [NAVSIM-v2] **train for 10 epochs** (You need to use [Navsim2 repo](https://github.com/autonomousvision/navsim) for evaluation: and copy the agent files, config to the evaluation repo.):
+
 ```bash
 TRAIN_TEST_SPLIT=navhard_two_stage
 CACHE_PATH=$NAVSIM_EXP_ROOT/navhard_two_stage_metric_cache
