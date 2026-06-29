@@ -1,0 +1,7 @@
+defaults:
+  - author_sim_0.4238_6_23_26
+  - _self_
+
+agent:
+  lr_args:
+    base_lr: 0.00005

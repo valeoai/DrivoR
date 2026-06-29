@@ -1,0 +1,25 @@
+[2026-06-28 14:07:13,787][__main__][INFO] - Global Seed set to 2
+[2026-06-28 14:07:13,790][__main__][INFO] - Path where all results are stored: /fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-06-28/drivor_v2_debugger
+[2026-06-28 14:07:13,790][__main__][INFO] - Building Agent
+[2026-06-28 14:07:15,458][timm.models._builder][INFO] - Loading pretrained weights from file (weights/vit_small_patch14_reg4_dinov2.lvd142m/model.safetensors)
+[2026-06-28 14:07:15,460][timm.models._helpers][ERROR] - No checkpoint found at 'weights/vit_small_patch14_reg4_dinov2.lvd142m/model.safetensors'
+[2026-06-28 14:07:15,753][timm.models._builder][INFO] - Loading pretrained weights from Hugging Face hub (timm/vit_small_patch14_reg4_dinov2.lvd142m)
+[2026-06-28 14:07:15,829][timm.models._hub][INFO] - [timm/vit_small_patch14_reg4_dinov2.lvd142m] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.
+[2026-06-28 14:07:16,008][timm.layers.pos_embed][INFO] - Resized position embedding: (37, 37) to (48, 82).
+[2026-06-28 14:07:17,581][navsim.planning.utils.multithreading.worker_ray_no_torch][INFO] - Not using GPU in ray
+[2026-06-28 14:07:17,582][navsim.planning.utils.multithreading.worker_ray_no_torch][INFO] - Starting ray local!
+[2026-06-28 14:07:22,661][nuplan.planning.utils.multithreading.worker_pool][INFO] - Worker: RayDistributedNoTorch
+[2026-06-28 14:07:22,661][nuplan.planning.utils.multithreading.worker_pool][INFO] - Number of nodes: 1
+Number of CPUs per node: 2
+Number of GPUs per node: 0
+Number of threads across all nodes: 2
+[2026-06-28 14:07:22,914][__main__][INFO] - Building Lightning Module
+[2026-06-28 14:07:22,915][__main__][INFO] - Building SceneLoader
+[2026-06-28 14:09:18,845][__main__][INFO] - Mixing 51644 sim samples with 51644 real samples (ratio=0.5)
+[2026-06-28 14:09:18,846][__main__][INFO] - Building Datasets
+[2026-06-28 14:09:18,848][__main__][INFO] -   real data: log=/fs/nexus-projects/sim2real/aliu/navsim/dataset/navsim_logs/trainval  blobs=/fs/nexus-projects/sim2real/aliu/navsim/dataset/sensor_blobs/trainval
+[2026-06-28 14:09:18,848][__main__][INFO] -   sim data:  log=/fs/nexus-projects/sim2real/aliu/carla_data_split/openscene_meta_datas  blobs=/fs/nexus-projects/sim2real/aliu/carla_data_split/sensor_blobs  ratio=0.5
+[2026-06-28 14:09:18,848][__main__][INFO] - Num training samples: 103288
+[2026-06-28 14:09:18,849][__main__][INFO] - Num validation samples: 18179
+[2026-06-28 14:09:18,849][__main__][INFO] - Building Trainer
+[2026-06-28 14:09:19,045][__main__][INFO] - Starting Training

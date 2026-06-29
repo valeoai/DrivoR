@@ -16,6 +16,20 @@
 #SBATCH --account=gamma
 #SBATCH --partition=gamma
 
+# --------------------------- UPDATE THIS ---------------------------
+CONFIG_NAME=drivor_v2_debugger
+# --------------------------- UPDATE THIS ---------------------------
+
+SCRIPT_PATH=$(readlink -f "$0")
+EXP_ROOT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp
+LOG_DIR=$EXP_ROOT/ke/$(date +%Y-%m-%d)/$CONFIG_NAME/lightning_logs
+
+if [ -z "$SLURM_JOB_ID" ]; then
+    mkdir -p $LOG_DIR
+    sbatch --job-name=$CONFIG_NAME --output=$LOG_DIR/train_%x.out.%j --error=$LOG_DIR/train_%x.out.%j "$SCRIPT_PATH"
+    exit 0
+fi
+
 eval "$(conda shell.bash hook)"
 conda activate drivoR
 
@@ -33,79 +47,61 @@ export PYTHONUNBUFFERED=1
 # Change to DrivoR root so relative backbone weight paths in drivoR.yaml resolve correctly
 cd $NAVSIM_DEVKIT_ROOT
 
-EXPERIMENT=test
-AGENT=drivoR
-
-# Resume from a specific checkpoint by setting RESUME_CHECKPOINT to its path.
-# Leave empty to auto-resume from the latest checkpoint of this experiment (if
-# one exists), or start fresh if none is found.
-# RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav1_30epochs_with_134k_simscale_bis_103ktrainval.pth
-RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs_with_134k_simscale_85ktrain_54.6.pth
-
-# ── Simulator data config ────────────────────────────────────────────────────
-SIM_LOG_PATH=$HOME/carla_data_split/openscene_meta_datas
-SIM_SENSOR_PATH=$HOME/carla_data_split/sensor_blobs
-SIM_DATA_RATIO=0.5
-# ────────────────────────────────────────────────────────────────────────────
-
-# Build optional sim args and enable adapter when sim data is present
-SIM_ARGS=""
-USE_ADAPTER=false
-USE_MATRIX_ADAPTER=false
-if [ "$(echo "$SIM_DATA_RATIO > 0" | bc -l)" -eq 1 ] && [ -n "$SIM_LOG_PATH" ]; then
-    SIM_ARGS="sim_data_ratio=$SIM_DATA_RATIO sim_log_path=$SIM_LOG_PATH"
-    if [ -n "$SIM_SENSOR_PATH" ]; then
-        SIM_ARGS="$SIM_ARGS sim_sensor_path=$SIM_SENSOR_PATH"
-    fi
-    if [ -n "$SIM_CACHE_PATH" ]; then
-        SIM_ARGS="$SIM_ARGS sim_cache_path=$SIM_CACHE_PATH"
-    fi
-    USE_ADAPTER=true
-    USE_MATRIX_ADAPTER=true
-fi
+EXPERIMENT=$(date +%Y-%m-%d)
 
 # PL's SLURMEnvironment uses SLURM_NTASKS=1 to set world_size=1, ignoring devices:8.
 # Unset it so PL uses its subprocess launcher and respects the devices config.
 unset SLURM_NTASKS
 
-echo "USE_ADAPTER=$USE_ADAPTER"
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
-    agent=$AGENT \
+    --config-path $NAVSIM_DEVKIT_ROOT/my_configs \
+    --config-name $CONFIG_NAME \
+    'hydra.searchpath=[pkg://navsim.planning.script.config.common,pkg://navsim.planning.script.config.training]' \
+    experiment_name=$EXPERIMENT
+
+# Kick off warmup eval on the last epoch checkpoint
+CKPT_DIR=$EXP_ROOT/ke/$EXPERIMENT/$CONFIG_NAME/lightning_logs/version_$SLURM_JOB_ID/checkpoints
+CHECKPOINT=$(find $CKPT_DIR -name "epoch*.ckpt" ! -name "best-*" | sort | tail -1)
+
+if [ -z "$CHECKPOINT" ]; then
+    echo "No last-epoch checkpoint found in $CKPT_DIR, skipping eval."
+    exit 0
+fi
+
+EPOCH=$(basename $CHECKPOINT .ckpt | cut -d'-' -f1)
+EVAL_JOB_NAME=eval_${CONFIG_NAME}_${EPOCH}_wp
+
+sbatch --job-name=$EVAL_JOB_NAME \
+       --output=$(dirname $CHECKPOINT)/%x.out.%j \
+       --error=$(dirname $CHECKPOINT)/%x.out.%j
+
+#!/bin/bash
+#SBATCH --mem=120gb
+#SBATCH --gres=gpu:rtxa5000:1
+#SBATCH --ntasks=32
+#SBATCH --time=10:00:00
+#SBATCH --qos=huge-long
+#SBATCH --account=gamma
+#SBATCH --partition=gamma
+
+eval "\$(conda shell.bash hook)"
+conda activate drivoR
+
+export HOME="/fs/nexus-projects/sim2real/aliu"
+export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
+export NUPLAN_MAPS_ROOT="\$HOME/navsim/dataset/maps"
+export NAVSIM_DEVKIT_ROOT="\$HOME/DrivoR"
+export NAVSIM_EXP_ROOT="\$NAVSIM_DEVKIT_ROOT/exp"
+export OPENSCENE_DATA_ROOT="\$HOME/navsim/dataset"
+export SUBSCORE_PATH=\$NAVSIM_EXP_ROOT
+
+cd \$NAVSIM_DEVKIT_ROOT
+
+python \$NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py \
+    --config-path \$NAVSIM_DEVKIT_ROOT/my_configs \
+    --config-name author_sim_eval_warmup \
+    'hydra.searchpath=[pkg://navsim.planning.script.config.common,pkg://navsim.planning.script.config.training,pkg://navsim.planning.script.config.pdm_scoring]' \
+    'hydra.output_subdir=null' \
+    'hydra.run.dir=/tmp' \
     experiment_name=$EXPERIMENT \
-    train_ckpt_path=$RESUME_CHECKPOINT \
-    train_test_split=navtrain \
-    cache_path=null \
-    use_cache_without_dataset=false \
-    trainer.params.devices=1 \
-    trainer.params.max_epochs=33 \
-    trainer.params.limit_train_batches=10 \
-    trainer.params.check_val_every_n_epoch=1 \
-    trainer.params.limit_val_batches=5 \
-    trainer.params.strategy=auto \
-    dataloader.params.prefetch_factor=2 \
-    dataloader.params.batch_size=10 \
-    dataloader.params.num_workers=2 \
-    dataloader.params.pin_memory=false \
-    agent.lr_args.name=AdamW \
-    agent.lr_args.base_lr=0.0002 \
-    agent.num_gpus=1 \
-    agent.progress_bar=false \
-    agent.config.refiner_ls_values=0.0 \
-    agent.config.image_backbone.focus_front_cam=false \
-    agent.config.image_backbone.use_hf_dinov2=false \
-    agent.config.one_token_per_traj=true \
-    agent.config.refiner_num_heads=1 \
-    agent.config.tf_d_model=256 \
-    agent.config.tf_d_ffn=1024 \
-    agent.config.area_pred=false \
-    agent.config.agent_pred=false \
-    agent.config.ref_num=4 \
-    agent.config.ray_threads=2 \
-    agent.config.use_adapter=$USE_ADAPTER \
-    agent.config.use_matrix_adapter=false \
-    agent.config.freeze_perception=true \
-    agent.loss.prev_weight=0.0 \
-    seed=2 \
-    $SIM_ARGS
-# $USE_MATRIX_ADAPTER
-    # agent.config.image_backbone.hf_model_name=facebook/dinov2-small \
+    agent.checkpoint_path=$CHECKPOINT

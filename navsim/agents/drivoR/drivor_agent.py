@@ -269,7 +269,7 @@ class DrivoRAgent(AbstractAgent):
         real_mask = features.get("real", None)
         def scoring_fn(targets, proposals, test=False):
             return self.compute_score(targets, proposals, test=test, real_mask=real_mask)
-        return self.loss(targets, pred, self._config, scoring_fn)
+        return self.loss(targets, pred, self._config, scoring_fn, real_mask=real_mask)
 
     def get_optimizers(self):
 

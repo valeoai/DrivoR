@@ -1,0 +1,38 @@
+defaults:
+  - default_common
+  - default_evaluation
+  - default_scoring_parameters
+  - agent: drivoR
+  - override worker: single_machine_thread_pool
+  - _self_
+metric_cache_path: ${oc.env:NAVSIM_EXP_ROOT}/navhard_two_stage_metric_cache
+synthetic_sensor_path: ${oc.env:OPENSCENE_DATA_ROOT}/navhard_two_stage/sensor_blobs
+synthetic_scenes_path: ${oc.env:OPENSCENE_DATA_ROOT}/navhard_two_stage/synthetic_scene_pickles
+
+agent:
+  checkpoint_path: PATH/TO/Nav2_10epochs.pth
+  scheduler_args:
+    num_epochs: 25
+  batch_size: 1
+  config:
+    proposal_num: 64
+    refiner_ls_values: 0.0
+    image_backbone:
+      focus_front_cam: false
+      use_hf_dinov2: false
+    one_token_per_traj: true
+    refiner_num_heads: 1
+    tf_d_model: 256
+    tf_d_ffn: 1024
+    area_pred: false
+    agent_pred: false
+    ref_num: 4
+    use_adapter: true
+    use_matrix_adapter: false
+    freeze_perception: true
+    noc: 10
+    dac: 13
+    ddc: 6
+    ttc: 14
+    ep: 15
+    comfort: 2

@@ -1,0 +1,31 @@
+hydra:
+  run:
+    dir: ${output_dir}
+  output_subdir: ${output_dir}/code/hydra
+  job:
+    chdir: False
+
+defaults:
+  - drivor_v2
+  - _self_
+
+sim_data_ratio: 0
+
+dataloader:
+  params:
+    batch_size: 10
+    num_workers: 4
+    pin_memory: false
+    prefetch_factor: 2
+
+trainer:
+  params:
+    max_epochs: 40
+
+agent:
+  num_gpus: 8
+  lr_args:
+    base_lr: 0.0001
+  config:
+    freeze_perception: true
+    use_adapter: false

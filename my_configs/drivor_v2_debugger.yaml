@@ -1,0 +1,34 @@
+defaults:
+  - drivor_v2
+  - _self_
+
+experiment_name: test
+
+sim_data_ratio: 0.5
+sim_log_path: /fs/nexus-projects/sim2real/aliu/carla_data_split/openscene_meta_datas
+sim_sensor_path: /fs/nexus-projects/sim2real/aliu/carla_data_split/sensor_blobs
+
+dataloader:
+  params:
+    batch_size: 10
+    num_workers: 2
+    pin_memory: false
+    prefetch_factor: 2
+
+trainer:
+  params:
+    devices: 1
+    max_epochs: 33
+    limit_train_batches: 10
+    limit_val_batches: 5
+    strategy: auto
+
+agent:
+  num_gpus: 1
+  config:
+    ray_threads: 2
+    use_adapter: true
+    use_matrix_adapter: false
+    freeze_perception: true
+    image_backbone:
+      use_hf_dinov2: false

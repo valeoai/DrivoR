@@ -62,6 +62,7 @@ class AgentLightningModule(pl.LightningModule):
     # PyTorch Lightning directs trainer.fit() into training_step function in module.
     # Mostly a wrapper to call _step() on batch. Do some logging on number of real counts
     # and not real counts in features.
+    # Tensorboard train loss logging in _step() function
     def training_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int) -> Tensor:
         """
         Step called on training samples
@@ -75,6 +76,8 @@ class AgentLightningModule(pl.LightningModule):
             real_mask = features["real"]
             self._train_real_total += int(real_mask.sum().item())
             self._train_sim_total += int((~real_mask).sum().item())
+        else:
+            self._train_real_total += next(iter(features.values())).shape[0]
         return self._step(batch, "train")
 
     def on_train_epoch_end(self) -> None:
@@ -91,6 +94,7 @@ class AgentLightningModule(pl.LightningModule):
         self._train_real_total = 0
         self._train_sim_total = 0
 
+    # Tensorboard val loss logging
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
         """
         Step called on validation samples

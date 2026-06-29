@@ -273,10 +273,6 @@ class MetricCacheLoader:
         with open(str(metadata_file), "r") as f:
             cache_paths = f.read().splitlines()[1:]
         metric_cache_dict = {cache_path.split("/")[-2]: cache_path for cache_path in cache_paths}
-
-
-        # print("Path(cfg.metric_cache_path) ", metric_cache_dict)
-        # assert False
         return metric_cache_dict
 
     @property

@@ -1,0 +1,5 @@
+defaults:
+  - drivor_v2_eval
+  - override train_test_split: navhard_two_stage
+  - _self_
+metric_cache_path: /fs/nexus-projects/sim2real/aliu/navsim/metric_cache_navhard

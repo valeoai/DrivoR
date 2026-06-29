@@ -116,14 +116,17 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
             cache_path=cfg.get("sim_cache_path", None),
             force_cache_computation=cfg.get("force_sim_cache_computation", False),
         ))
-        # subsample both real and sim to sim_data_ratio * len(real) each, so they match
         n_target = int(sim_data_ratio * len(train_data._dataset))
-        n_real = min(n_target, len(train_data))
         n_sim = min(n_target, len(sim_dataset))
-        real_indices = torch.randperm(len(train_data))[:n_real].tolist()
         sim_indices = torch.randperm(len(sim_dataset))[:n_sim].tolist()
-        train_data = torch.utils.data.Subset(train_data, real_indices)
         sim_dataset = torch.utils.data.Subset(sim_dataset, sim_indices)
+        # keep_all_real=True: use the full real dataset; default subsamples real to match n_target
+        if not cfg.get("keep_all_real", False):
+            n_real = min(n_target, len(train_data))
+            real_indices = torch.randperm(len(train_data))[:n_real].tolist()
+            train_data = torch.utils.data.Subset(train_data, real_indices)
+        else:
+            n_real = len(train_data)
         logger.info(f"Mixing {n_sim} sim samples with {n_real} real samples (ratio={sim_data_ratio})")
         train_data = ConcatDataset([train_data, sim_dataset])
 

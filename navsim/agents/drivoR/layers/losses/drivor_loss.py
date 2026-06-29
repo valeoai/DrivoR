@@ -239,7 +239,7 @@ class DrivoRLoss(torch.nn.Module):
 
         return inter_loss
 
-    def forward(self,targets: Dict[str, torch.Tensor], pred: Dict[str, torch.Tensor], config  , scoring_function=None):
+    def forward(self,targets: Dict[str, torch.Tensor], pred: Dict[str, torch.Tensor], config  , scoring_function=None, real_mask=None):
 
         proposals = pred["proposals"]
         proposal_list = pred["proposal_list"]
@@ -328,6 +328,8 @@ class DrivoRLoss(torch.nn.Module):
         score = final_scores[np.arange(len(final_scores)), top_proposals].mean()
         # Average only over scored (real) items; sim samples stay zero and
         # should not dilute the metric.
+        # TODO: if best_scores mask does not impact score, uncomment and replace
+        # scored_mask = real_mask.bool() if real_mask is not None else (best_scores > 0)
         scored_mask = best_scores > 0
         best_score = best_scores[scored_mask].mean() if scored_mask.any() else best_scores.new_tensor(0.0)
 
@@ -347,9 +349,9 @@ class DrivoRLoss(torch.nn.Module):
             "ddc_loss": ddc_loss,
             "comfort_loss": comfort_loss,
             'final_score_loss': final_score_loss,
-            'pred_ce_loss': pred_ce_loss,
-            'pred_l1_loss': pred_l1_loss,
-            'pred_area_loss': pred_area_loss,
+            # 'pred_ce_loss': pred_ce_loss,
+            # 'pred_l1_loss': pred_l1_loss,
+            # 'pred_area_loss': pred_area_loss,
             "inter_loss0": inter_loss0,
             # "inter_loss1": inter_loss1,
             "inter_loss": inter_loss,

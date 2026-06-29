@@ -1,0 +1,6 @@
+defaults:
+  - drivor_v2_eval
+  - override train_test_split: warmup_test_e2e
+  - _self_
+metric_cache_path: ${oc.env:NAVSIM_DEVKIT_ROOT}/metric_cache_warmup
+sensor_blobs_path: ${oc.env:OPENSCENE_DATA_ROOT}/mini_sensor_blobs/mini
