@@ -1,0 +1,7 @@
+defaults:
+  - author_sim_0.1_0.4787_6_29_26
+  - _self_
+
+train_test_split:
+  scene_filter:
+    max_scenes: 12910

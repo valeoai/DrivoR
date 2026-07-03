@@ -10,7 +10,7 @@
 #SBATCH --ntasks=32
 
 ## GAMMA training config
-#SBATCH --time=1:00:00
+#SBATCH --time=10:00:00
 #SBATCH --qos=huge-long
 #SBATCH --account=gamma
 #SBATCH --partition=gamma
@@ -24,51 +24,43 @@ export NUPLAN_MAPS_ROOT="$HOME/navsim/dataset/maps"
 export NAVSIM_DEVKIT_ROOT="$HOME/DrivoR"
 export NAVSIM_EXP_ROOT="$NAVSIM_DEVKIT_ROOT/exp"
 export OPENSCENE_DATA_ROOT="$HOME/navsim/dataset"
+export SUBSCORE_PATH=$NAVSIM_EXP_ROOT
+
+SCRIPT_PATH=$(readlink -f "$0")
 
 cd $NAVSIM_DEVKIT_ROOT
 
-TRAIN_TEST_SPLIT=warmup_test_e2e
-METRIC_CACHE_PATH=/fs/nexus-projects/sim2real/aliu/DrivoR/metric_cache_warmup
 EXPERIMENT=drivoR_nav2
 AGENT=drivoR
 
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_realonly_training/lightning_logs/version_7021972/checkpoints/epoch39-step62140.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_realonly_training/lightning_logs/version_7021972/checkpoints/best-epoch35-step57888.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_training/lightning_logs/version_7022063/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_training/lightning_logs/version_7022063/checkpoints/best-epoch34-step57965.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/test_rerun_author_sim_0.4238_6_23_26/lightning_logs/version_7029641/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/sanity_author/lightning_logs/version_7035005/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_tests/author_sim_0.5/lightning_logs/version_7041255/checkpoints/epoch34-step57965.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_tests/author_realonly_sanity/lightning_logs/version_7041248/checkpoints/epoch39-step64420.ckpt
-CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-06-28/author_sim_0.1/lightning_logs/version_7042874/checkpoints/epoch39-step54090.ckpt
+CHECKPOINT_BASE=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke
+# CHECKPOINT=$CHECKPOINT_BASE/test_rerun_author_sim_0.4238_6_23_26/lightning_logs/version_7029641/checkpoints/epoch39-step64420.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/author_sim_0.4238_6_23_26_lr0.00005/lightning_logs/version_7029713/checkpoints/epoch39-step64420.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/author_sim_0.4238_6_23_26_val/lightning_logs/version_7029714/checkpoints/best-epoch35-step59256.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/author_sim/sanity_author/lightning_logs/version_7035005/checkpoints/epoch39-step64420.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/2026-06-29/test_data_size_realonly_12910/lightning_logs/version_7045334/checkpoints/epoch39-step53120.ckpt
+CHECKPOINT=$CHECKPOINT_BASE/2026-06-30/author_sim_0.1_0.4787_6_29_26_12910/lightning_logs/version_7047943/checkpoints/epoch39-step51830.ckpt
 
-python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py  \
-    train_test_split=$TRAIN_TEST_SPLIT \
-    agent=$AGENT \
-    worker=single_machine_thread_pool \
-    agent.checkpoint_path=$CHECKPOINT \
-    agent.scheduler_args.num_epochs=25 \
-    agent.batch_size=1 \
+
+MODEL_NAME=$(basename $(dirname $(dirname $(dirname $(dirname $CHECKPOINT)))))
+EPOCH=$(basename $CHECKPOINT .ckpt | cut -d'-' -f1)
+JOB_NAME=eval_${MODEL_NAME}_${EPOCH}_wp
+
+# Re-submit via sbatch with output next to the checkpoint; skip when already inside SLURM
+if [ -z "$SLURM_JOB_ID" ]; then
+    sbatch --job-name=$JOB_NAME --output=$(dirname $CHECKPOINT)/%x.out.%j --error=$(dirname $CHECKPOINT)/%x.out.%j "$SCRIPT_PATH"
+    exit 0
+fi
+
+CONFIG_NAME=author_sim_eval_warmup
+# CONFIG_NAME=author_realonly_eval_warmup
+
+python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py \
+    --config-path $NAVSIM_DEVKIT_ROOT/my_configs \
+    --config-name $CONFIG_NAME \
+    'hydra.searchpath=[pkg://navsim.planning.script.config.common,pkg://navsim.planning.script.config.training,pkg://navsim.planning.script.config.pdm_scoring]' \
+    'hydra.output_subdir=null' \
+    'hydra.run.dir=/tmp' \
     experiment_name=$EXPERIMENT \
-    metric_cache_path=$METRIC_CACHE_PATH \
-    navsim_log_path=$OPENSCENE_DATA_ROOT/navsim_logs/mini \
-    sensor_blobs_path=$OPENSCENE_DATA_ROOT/mini_sensor_blobs/mini \
-    agent.config.use_adapter=true \
-    agent.config.use_matrix_adapter=false \
-    agent.config.image_backbone.use_hf_dinov2=false \
-    agent.config.proposal_num=64 \
-    agent.config.refiner_ls_values=0.0 \
-    agent.config.image_backbone.focus_front_cam=false \
-    agent.config.one_token_per_traj=true \
-    agent.config.refiner_num_heads=1 \
-    agent.config.tf_d_model=256 \
-    agent.config.tf_d_ffn=1024 \
-    agent.config.area_pred=false \
-    agent.config.agent_pred=false \
-    agent.config.ref_num=4 \
-    agent.config.noc=10 \
-    agent.config.dac=13 \
-    agent.config.ddc=6 \
-    agent.config.ttc=14 \
-    agent.config.ep=15 \
-    agent.config.comfort=2
+    agent.checkpoint_path=$CHECKPOINT
+

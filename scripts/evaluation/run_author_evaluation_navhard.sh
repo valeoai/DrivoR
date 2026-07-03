@@ -42,21 +42,27 @@ CHECKPOINT_BASE=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/author_sim_0.4238_6_23_26_val/lightning_logs/version_7029714/checkpoints/epoch39-step64420.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/author_sim_0.4238_6_23_26_val/lightning_logs/version_7029714/checkpoints/best-epoch35-step59256.ckpt
 # CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-06-28/author_sim_0.1/lightning_logs/version_7042874/checkpoints/epoch39-step54090.ckpt
-CHECKPOINT=$CHECKPOINT_BASE/2026-06-29/author_sim_0.1/lightning_logs/version_7045829/checkpoints/epoch39-step54090.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/2026-06-29/author_sim_0.1/lightning_logs/version_7045829/checkpoints/epoch39-step54090.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/2026-06-29/test_data_size_realonly_12910/lightning_logs/version_7045334/checkpoints/epoch39-step53120.ckpt
+# CHECKPOINT=$CHECKPOINT_BASE/2026-06-28/author_sim_0.25/lightning_logs/version_7043949/checkpoints/epoch39-step54090.ckpt
+CHECKPOINT=$CHECKPOINT_BASE/2026-06-30/author_sim_0.1_0.4787_6_29_26_12910/lightning_logs/version_7047943/checkpoints/epoch39-step51830.ckpt
 
 MODEL_NAME=$(basename $(dirname $(dirname $(dirname $(dirname $CHECKPOINT)))))
 EPOCH=$(basename $CHECKPOINT .ckpt | cut -d'-' -f1)
-JOB_NAME=eval_${MODEL_NAME}_${EPOCH}_navhard
+JOB_NAME=eval_${MODEL_NAME}_${EPOCH}
 
 # Re-submit via sbatch with output next to the checkpoint; skip when already inside SLURM
 if [ -z "$SLURM_JOB_ID" ]; then
-    sbatch --job-name=$JOB_NAME --output=$(dirname $CHECKPOINT)/eval_%x.out.%j --error=$(dirname $CHECKPOINT)/eval_%x.out.%j "$SCRIPT_PATH"
+    sbatch --job-name=$JOB_NAME --output=$(dirname $CHECKPOINT)/%x.out.%j --error=$(dirname $CHECKPOINT)/%x.out.%j "$SCRIPT_PATH"
     exit 0
 fi
 
+CONFIG_NAME=author_sim_eval_navhard
+# CONFIG_NAME=author_realonly_eval_navhard
+
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score_gpu_v2.py \
     --config-path $NAVSIM_DEVKIT_ROOT/my_configs \
-    --config-name author_sim_eval_navhard \
+    --config-name $CONFIG_NAME \
     'hydra.searchpath=[pkg://navsim.planning.script.config.common,pkg://navsim.planning.script.config.training,pkg://navsim.planning.script.config.pdm_scoring]' \
     'hydra.output_subdir=null' \
     'hydra.run.dir=/tmp' \
