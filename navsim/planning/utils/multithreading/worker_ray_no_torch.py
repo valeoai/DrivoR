@@ -2,12 +2,11 @@ import logging
 import os
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import ray
 from psutil import cpu_count
 
-from nuplan.planning.utils.multithreading.ray_execution import ray_map
 from nuplan.planning.utils.multithreading.worker_pool import Task, WorkerPool, WorkerResources
 
 logger = logging.getLogger(__name__)
@@ -123,6 +122,14 @@ class RayDistributedNoTorch(WorkerPool):
         self._log_to_driver = log_to_driver
         self._log_dir: Optional[Path] = Path(output_dir) / (logs_subdir or "") if output_dir is not None else None
         self._use_distributed = use_distributed
+        # Cache of ray.remote() registrations, keyed by the underlying python function.
+        # nuplan's ray_map() re-wraps and re-registers the function with ray.remote()
+        # on every call, which permanently grows ray's function/object store (it is
+        # never evicted). Over a multi-epoch run that leak eventually fills the store
+        # and .remote()/submit() start blocking forever instead of erroring, which
+        # then trips the NCCL collective timeout on this rank. Registering once and
+        # reusing the handle avoids the leak entirely.
+        self._remote_fn_cache: Dict[Any, Any] = {}
         super().__init__(self.initialize())
 
     def initialize(self) -> WorkerResources:
@@ -149,13 +156,28 @@ class RayDistributedNoTorch(WorkerPool):
         """
         ray.shutdown()
 
+    def _get_or_register_remote_fn(self, task: Task) -> Any:
+        """
+        Look up a cached ray.remote() registration for task.fn, registering it once
+        if this is the first time we've seen it. See the comment in __init__ for why
+        this cache exists: repeatedly calling ray.remote() on the same function is a
+        documented ray leak.
+        """
+        remote_fn = self._remote_fn_cache.get(task.fn)
+        if remote_fn is None:
+            remote_fn = ray.remote(task.fn)
+            self._remote_fn_cache[task.fn] = remote_fn
+        return remote_fn.options(num_gpus=task.num_gpus, num_cpus=task.num_cpus)
+
     def _map(self, task: Task, *item_lists: Iterable[List[Any]], verbose: bool = False) -> List[Any]:
         """Inherited, see superclass."""
         del verbose
-        return ray_map(task, *item_lists, log_dir=self._log_dir)  # type: ignore
+        remote_fn = self._get_or_register_remote_fn(task)
+        object_ids = [remote_fn.remote(*items) for items in zip(*item_lists)]
+        return ray.get(object_ids)
 
     def submit(self, task: Task, *args: Any, **kwargs: Any):
         """Inherited, see superclass."""
-        remote_fn = ray.remote(task.fn).options(num_gpus=task.num_gpus, num_cpus=task.num_cpus)
+        remote_fn = self._get_or_register_remote_fn(task)
         object_ids: ray._raylet.ObjectRef = remote_fn.remote(*args, **kwargs)
         return object_ids.future()  # type: ignore

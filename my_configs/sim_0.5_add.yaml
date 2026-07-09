@@ -1,0 +1,6 @@
+defaults:
+  - sim_0.5_balanced
+  - _self_
+
+sim_data_ratio: 0.5
+sim_data_mode: add

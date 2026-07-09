@@ -1,3 +1,5 @@
+import concurrent.futures
+import logging
 from time import sleep
 
 import numpy as np
@@ -9,9 +11,22 @@ from navsim.common.dataclasses import Trajectory
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import Trajectory
 
+logger = logging.getLogger(__name__)
+
+# Rank 0's PDM scoring during validation is CPU-bound (metric-cache pickle loads +
+# PDM simulation) and shares the node's CPUs with all DDP ranks' DataLoader workers,
+# which can fully saturate the node. If rank 0 ever stalls on a single validation
+# batch (CPU contention, a slow NFS read, a ray hiccup, etc.) for longer than the
+# NCCL collective timeout (1800s by default), the whole job is aborted by the NCCL
+# watchdog because the other 7 ranks are already waiting at the same collective.
+# Bounding rank 0's wall-clock time per batch guarantees it always reaches the
+# collective well inside that window, regardless of what caused the slowdown.
+_VALIDATION_SCORE_TIMEOUT_S = 600
+
+
 def _rowwise_isin(tensor_1: torch.Tensor, target_tensor: torch.Tensor) -> torch.Tensor:
     matches = (tensor_1[:, None] == target_tensor)
-    
+
     return torch.sum(matches, dim=1, dtype=torch.bool)
 
 
@@ -81,18 +96,46 @@ class AgentLightningModule(pl.LightningModule):
         return self._step(batch, "train")
 
     def on_train_epoch_end(self) -> None:
+        # Aggregate per-rank counts so the summary reflects the actual data sampled
+        # across all GPUs, not just rank 0's shard.
+        counts = torch.tensor([self._train_real_total, self._train_sim_total], device=self.device)
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(counts, op=torch.distributed.ReduceOp.SUM)
+        real_total, sim_total = int(counts[0].item()), int(counts[1].item())
         if self.global_rank == 0:
-            total = self._train_real_total + self._train_sim_total
-            real_pct = 100.0 * self._train_real_total / total if total > 0 else 0.0
-            sim_pct = 100.0 * self._train_sim_total / total if total > 0 else 0.0
+            total = real_total + sim_total
+            real_pct = 100.0 * real_total / total if total > 0 else 0.0
+            sim_pct = 100.0 * sim_total / total if total > 0 else 0.0
+            sampled_ratio = sim_total / real_total if real_total > 0 else float("nan")
             print(
-                f"\n[Epoch {self.current_epoch} | rank {self.global_rank}] Data mix summary:\n"
-                f"  real : {self._train_real_total:>6d}  ({real_pct:.1f}%)\n"
-                f"  sim  : {self._train_sim_total:>6d}  ({sim_pct:.1f}%)\n"
-                f"  total: {total:>6d}"
+                f"\n[Epoch {self.current_epoch}] Data mix summary (all ranks):\n"
+                f"  real : {real_total:>8d}  ({real_pct:.1f}%)\n"
+                f"  sim  : {sim_total:>8d}  ({sim_pct:.1f}%)\n"
+                f"  total: {real_total + sim_total:>8d}\n"
+                f"  sampled sim/real ratio: {sampled_ratio:.3f}"
             )
         self._train_real_total = 0
         self._train_sim_total = 0
+
+    @staticmethod
+    def _score_validation_batch(agent, targets, all_chosen_trajectories, all_proposed_trajectories):
+        """
+        Pure computation, no self.log() calls: this runs on a worker thread with a
+        wall-clock timeout, so it must not touch LightningModule state that isn't
+        thread-safe.
+        """
+        final_score, _fake_best_score, proposal_scores, l2, trajectoy_scores = agent.compute_score(targets, all_chosen_trajectories)
+        _, best_score, all_proposal_scores, _, _ = agent.compute_score(targets, all_proposed_trajectories)
+        mean_score = proposal_scores.mean()
+        return {
+            "final_score": final_score,
+            "proposal_scores": proposal_scores,
+            "l2": l2,
+            "trajectoy_scores": trajectoy_scores,
+            "best_score": best_score,
+            "all_proposal_scores": all_proposal_scores,
+            "mean_score": mean_score,
+        }
 
     # Tensorboard val loss logging
     def validation_step(self, batch: Tuple[Dict[str, Tensor], Dict[str, Tensor]], batch_idx: int):
@@ -118,43 +161,67 @@ class AgentLightningModule(pl.LightningModule):
             # All other detailed PDM metrics are rank-0-only (sync_dist=False).
             logging_prefix = "val"
             if self.global_rank == 0:
-                final_score, fake_best_score, proposal_scores, l2, trajectoy_scores = self.agent.compute_score(targets, all_chosen_trajectories)
-                _, best_score, all_proposal_scores, _, _ = self.agent.compute_score(targets, all_proposed_trajectories)
-                mean_score=proposal_scores.mean()
+                # Bound rank 0's wall-clock time: a fresh single-worker executor per
+                # call means a stuck batch (e.g. CPU starvation, NFS stall) never
+                # blocks subsequent steps -- it just gets abandoned in the background
+                # and this step contributes 0.0, same as the other 7 ranks would.
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                future = executor.submit(
+                    self._score_validation_batch, self.agent, targets, all_chosen_trajectories, all_proposed_trajectories
+                )
+                executor.shutdown(wait=False)
+                try:
+                    result = future.result(timeout=_VALIDATION_SCORE_TIMEOUT_S)
+                except concurrent.futures.TimeoutError:
+                    logger.warning(
+                        f"[Epoch {self.current_epoch}] PDM scoring exceeded "
+                        f"{_VALIDATION_SCORE_TIMEOUT_S}s on this validation batch "
+                        "(likely CPU/IO contention); contributing 0.0 for this step "
+                        "instead of risking the DDP collective timing out."
+                    )
+                    final_score = torch.tensor(0.0, device=self.device)
+                else:
+                    final_score = result["final_score"]
+                    proposal_scores = result["proposal_scores"]
+                    mean_score = result["mean_score"]
+                    best_score = result["best_score"]
+                    all_proposal_scores = result["all_proposal_scores"]
+                    l2 = result["l2"]
+                    trajectoy_scores = result["trajectoy_scores"]
 
-                if "pdm_score" in predictions:
-                    pdm_score = predictions["pdm_score"]
-                    best_pred_score_values = pdm_score[torch.arange(len(pdm_score)), torch.argmax(pdm_score, dim=1)]
-                    score_error = torch.abs(best_pred_score_values - proposal_scores).mean()
-                    self.log(f"{logging_prefix}/score_error", score_error, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    if "pdm_score" in predictions:
+                        pdm_score = predictions["pdm_score"]
+                        best_pred_score_values = pdm_score[torch.arange(len(pdm_score)), torch.argmax(pdm_score, dim=1)]
+                        score_error = torch.abs(best_pred_score_values - proposal_scores).mean()
+                        self.log(f"{logging_prefix}/score_error", score_error, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
 
-                    best_pred_score_index = torch.argmax(pdm_score, dim=1)
-                    best_real_score_index = torch.argmax(all_proposal_scores, dim=1)
-                    score_hit_rate = torch.mean(best_pred_score_index == best_real_score_index, dtype=torch.float32)
+                        best_pred_score_index = torch.argmax(pdm_score, dim=1)
+                        best_real_score_index = torch.argmax(all_proposal_scores, dim=1)
+                        score_hit_rate = torch.mean(best_pred_score_index == best_real_score_index, dtype=torch.float32)
 
-                    best_possible_scores = all_proposal_scores[torch.arange(len(all_proposal_scores)), best_real_score_index]
-                    best_actual_scores = all_proposal_scores[torch.arange(len(all_proposal_scores)), best_pred_score_index]
-                    lost_score = torch.mean(best_possible_scores - best_actual_scores)
-                    self.log(f"{logging_prefix}/score_hit_rate", score_hit_rate, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                    self.log(f"{logging_prefix}/lost_score", lost_score, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                        best_possible_scores = all_proposal_scores[torch.arange(len(all_proposal_scores)), best_real_score_index]
+                        best_actual_scores = all_proposal_scores[torch.arange(len(all_proposal_scores)), best_pred_score_index]
+                        lost_score = torch.mean(best_possible_scores - best_actual_scores)
+                        self.log(f"{logging_prefix}/score_hit_rate", score_hit_rate, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                        self.log(f"{logging_prefix}/lost_score", lost_score, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
 
-                    top_5_indices_real = torch.topk(all_proposal_scores, k=5, dim=1).indices
-                    top_5_score_hit_rate = _rowwise_isin(best_pred_score_index, top_5_indices_real).mean(dtype=torch.float32)
-                    self.log(f"{logging_prefix}/top_5_score_hit_rate", top_5_score_hit_rate, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                        top_5_indices_real = torch.topk(all_proposal_scores, k=5, dim=1).indices
+                        top_5_score_hit_rate = _rowwise_isin(best_pred_score_index, top_5_indices_real).mean(dtype=torch.float32)
+                        self.log(f"{logging_prefix}/top_5_score_hit_rate", top_5_score_hit_rate, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
 
-                self.log(f"{logging_prefix}/best_score", best_score, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                self.log(f"{logging_prefix}/mean_score", mean_score, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                self.log(f"{logging_prefix}/l2", l2, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                collision=trajectoy_scores[:,0].mean()
-                self.log(f"{logging_prefix}/collision", collision, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                drivable_area_compliance=trajectoy_scores[:,1].mean()
-                self.log(f"{logging_prefix}/dac", drivable_area_compliance, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                ego_progress=trajectoy_scores[:,2].mean()
-                self.log(f"{logging_prefix}/progress", ego_progress, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                time_to_collision_within_bound=trajectoy_scores[:,3].mean()
-                self.log(f"{logging_prefix}/ttc", time_to_collision_within_bound, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
-                comfort=trajectoy_scores[:,4].mean()
-                self.log(f"{logging_prefix}/comfort", comfort, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    self.log(f"{logging_prefix}/best_score", best_score, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    self.log(f"{logging_prefix}/mean_score", mean_score, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    self.log(f"{logging_prefix}/l2", l2, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    collision=trajectoy_scores[:,0].mean()
+                    self.log(f"{logging_prefix}/collision", collision, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    drivable_area_compliance=trajectoy_scores[:,1].mean()
+                    self.log(f"{logging_prefix}/dac", drivable_area_compliance, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    ego_progress=trajectoy_scores[:,2].mean()
+                    self.log(f"{logging_prefix}/progress", ego_progress, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    time_to_collision_within_bound=trajectoy_scores[:,3].mean()
+                    self.log(f"{logging_prefix}/ttc", time_to_collision_within_bound, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+                    comfort=trajectoy_scores[:,4].mean()
+                    self.log(f"{logging_prefix}/comfort", comfort, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
             else:
                 final_score = torch.tensor(0.0, device=self.device)
 

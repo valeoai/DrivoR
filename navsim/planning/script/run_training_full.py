@@ -94,6 +94,12 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         force_cache_computation=cfg.force_cache_computation,
     ))
 
+    # Cap the real training set to max_samples
+    max_samples = train_scene_filter.max_samples
+    if max_samples is not None and max_samples < len(train_data):
+        real_indices = torch.randperm(len(train_data))[:max_samples].tolist()
+        train_data = torch.utils.data.Subset(train_data, real_indices)
+
     # Optionally mix in sim data. sim_data_ratio > 0 enables this path.
     sim_data_ratio = cfg.get("sim_data_ratio", 0.0)
     sim_log_path = cfg.get("sim_log_path", None)
@@ -116,17 +122,33 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
             cache_path=cfg.get("sim_cache_path", None),
             force_cache_computation=cfg.get("force_sim_cache_computation", False),
         ))
-        n_target = int(sim_data_ratio * len(train_data._dataset))
+        sim_data_mode = cfg.get("sim_data_mode", "balanced")
+        n_target = int(sim_data_ratio * len(train_data))
         n_sim = min(n_target, len(sim_dataset))
         sim_indices = torch.randperm(len(sim_dataset))[:n_sim].tolist()
         sim_dataset = torch.utils.data.Subset(sim_dataset, sim_indices)
-        # keep_all_real=True: use the full real dataset; default subsamples real to match n_target
-        if not cfg.get("keep_all_real", False):
+        if sim_data_mode == "replace":
+            # Sim samples displace an equal number of real samples: total stays len(real),
+            # with sim_data_ratio of it sim (e.g. 0.25 -> 25% sim / 75% real).
+            assert n_sim <= len(train_data) and n_target >= n_sim, (
+                f"sim_data_mode='replace' requires sim_data_ratio <= 1.0 (got "
+                f"sim_data_ratio={sim_data_ratio}, which asks for n_sim={n_sim} sim samples "
+                f"to displace real ones, but only {len(train_data)} real samples exist)"
+            )
+            n_real = len(train_data) - n_sim
+            real_indices = torch.randperm(len(train_data))[:n_real].tolist()
+            train_data = torch.utils.data.Subset(train_data, real_indices)
+        elif sim_data_mode == "add":
+            # Keep the full (capped) real dataset; ratio * len(real) sim samples are added on top.
+            n_real = len(train_data)
+        elif sim_data_mode == "balanced":
+            # Both real and sim subsampled to ratio * len(real) -> ~50/50 mix, total
+            # 2 * ratio * len(real). Matches the 0.4787/0.5086 breakthrough runs.
             n_real = min(n_target, len(train_data))
             real_indices = torch.randperm(len(train_data))[:n_real].tolist()
             train_data = torch.utils.data.Subset(train_data, real_indices)
         else:
-            n_real = len(train_data)
+            raise ValueError(f"sim_data_mode must be 'replace', 'add', or 'balanced', got {sim_data_mode!r}")
         logger.info(f"Mixing {n_sim} sim samples with {n_real} real samples (ratio={sim_data_ratio})")
         train_data = ConcatDataset([train_data, sim_dataset])
 

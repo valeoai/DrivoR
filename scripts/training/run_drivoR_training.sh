@@ -16,6 +16,21 @@
 #SBATCH --account=gamma
 #SBATCH --partition=gamma
 
+# --------------------------- UPDATE THIS ---------------------------
+CONFIG_NAME=sim_0.25_add_continue10
+# --------------------------- UPDATE THIS ---------------------------
+
+SCRIPT_PATH=$(readlink -f "$0")
+EXP_ROOT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp
+
+if [ -z "$SLURM_JOB_ID" ]; then
+    EXPERIMENT=$(date +%Y-%m-%d)
+    LOG_DIR=$EXP_ROOT/ke/$EXPERIMENT/$CONFIG_NAME/lightning_logs
+    mkdir -p $LOG_DIR
+    sbatch --job-name=$CONFIG_NAME --export=ALL,EXPERIMENT=$EXPERIMENT --output=$LOG_DIR/train_%x.out.%j --error=$LOG_DIR/train_%x.out.%j "$SCRIPT_PATH"
+    exit 0
+fi
+
 eval "$(conda shell.bash hook)"
 conda activate drivoR
 
@@ -25,95 +40,94 @@ export NUPLAN_MAPS_ROOT="$HOME/navsim/dataset/maps"
 export NAVSIM_DEVKIT_ROOT="$HOME/DrivoR"
 export NAVSIM_EXP_ROOT="$NAVSIM_DEVKIT_ROOT/exp"
 export OPENSCENE_DATA_ROOT="$HOME/navsim/dataset"
-export NAVSIM_TRAIN_METRIC_CACHE="$HOME/navsim/metric_cache_trainval"
-
 export HYDRA_FULL_ERROR=1
 export PYTHONUNBUFFERED=1
 
 # Change to DrivoR root so relative backbone weight paths in drivoR.yaml resolve correctly
 cd $NAVSIM_DEVKIT_ROOT
 
-EXPERIMENT=6-20
-AGENT=drivoR
-
-# Resume from a specific checkpoint by setting RESUME_CHECKPOINT to its path.
-# Leave empty to auto-resume from the latest checkpoint of this experiment (if
-# one exists), or start fresh if none is found.
-# RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav1_30epochs_with_134k_simscale_bis_103ktrainval.pth
-RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/weights/nav2_30_epochs_with_134k_simscale_85ktrain_54.6.pth
-
-# RESUME_CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/5-18_5-24/adapt_percept/lightning_logs/version_6861133/last.ckpt
-
-# ── Simulator data config ────────────────────────────────────────────────────
-SIM_LOG_PATH=$HOME/carla_data_split/openscene_meta_datas
-SIM_SENSOR_PATH=$HOME/carla_data_split/sensor_blobs
-SIM_DATA_RATIO=0.5 # sim_data_ratio of .5 now means each epoch see 50-50 of real and sim
-# ────────────────────────────────────────────────────────────────────────────
-
-# Build optional sim args and enable adapter when sim data is present
-SIM_ARGS=""
-USE_ADAPTER=false
-USE_MATRIX_ADAPTER=false
-if [ "$(echo "$SIM_DATA_RATIO > 0" | bc -l)" -eq 1 ] && [ -n "$SIM_LOG_PATH" ]; then
-    SIM_ARGS="sim_data_ratio=$SIM_DATA_RATIO sim_log_path=$SIM_LOG_PATH"
-    if [ -n "$SIM_SENSOR_PATH" ]; then
-        SIM_ARGS="$SIM_ARGS sim_sensor_path=$SIM_SENSOR_PATH"
-    fi
-    if [ -n "$SIM_CACHE_PATH" ]; then
-        SIM_ARGS="$SIM_ARGS sim_cache_path=$SIM_CACHE_PATH"
-    fi
-    USE_ADAPTER=true
-    USE_MATRIX_ADAPTER=true
-fi
-
-# PL's SLURMEnvironment uses SLURM_NTASKS=1 to set world_size=1, ignoring devices:8.
-# Unset it so PL uses its subprocess launcher and respects the devices config.
 unset SLURM_NTASKS
 
-echo "USE_ADAPTER=$USE_ADAPTER"
-
-# {STARTING POINT} -> {MAIN METHOD}
-# python command that starts it all. These variables (at the moment) are the most important to keep track of
-# SIM_LOG_PATH: sim data parent directory
-# SIM_DATA_RATIO: sim_data_ratio of .5 now means each epoch see 50-50 of real and sim
-# use_matrix_adapter: whether or not to use matrix version. since it consistently gets worse results, keep it FALSE for now
-# freeze_perception: whether or not to freeze perception. setting it to false keeps whole model trainable. slightly worse results
-# limit_train_batches: 100 leads to 1000 sim and real data instances being loaded per epoch? need to check
 python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_training_full.py \
-    agent=$AGENT \
+    --config-path $NAVSIM_DEVKIT_ROOT/my_configs \
+    --config-name $CONFIG_NAME \
+    'hydra.searchpath=[pkg://navsim.planning.script.config.common,pkg://navsim.planning.script.config.training]' \
+    experiment_name=$EXPERIMENT
+
+# Kick off warmup eval on the last epoch checkpoint
+CKPT_DIR=$EXP_ROOT/ke/$EXPERIMENT/$CONFIG_NAME/lightning_logs/version_$SLURM_JOB_ID/checkpoints
+CHECKPOINT=$(find $CKPT_DIR -name "epoch*.ckpt" ! -name "best-*" | sort | tail -1)
+
+if [ -z "$CHECKPOINT" ]; then
+    echo "No last-epoch checkpoint found in $CKPT_DIR, skipping eval."
+    exit 0
+fi
+
+EPOCH=$(basename $CHECKPOINT .ckpt | cut -d'-' -f1)
+EVAL_JOB_NAME=eval_${CONFIG_NAME}_${EPOCH}_wp
+
+sbatch --job-name=$EVAL_JOB_NAME \
+       --output=$(dirname $CHECKPOINT)/%x.out.%j \
+       --error=$(dirname $CHECKPOINT)/%x.out.%j << EOF
+#!/bin/bash
+#SBATCH --mem=120gb
+#SBATCH --gres=gpu:rtxa5000:1
+#SBATCH --ntasks=32
+#SBATCH --time=10:00:00
+#SBATCH --qos=huge-long
+#SBATCH --account=gamma
+#SBATCH --partition=gamma
+
+eval "\$(conda shell.bash hook)"
+conda activate drivoR
+
+export HOME="/fs/nexus-projects/sim2real/aliu"
+export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
+export NUPLAN_MAPS_ROOT="\$HOME/navsim/dataset/maps"
+export NAVSIM_DEVKIT_ROOT="\$HOME/DrivoR"
+export NAVSIM_EXP_ROOT="\$NAVSIM_DEVKIT_ROOT/exp"
+export OPENSCENE_DATA_ROOT="\$HOME/navsim/dataset"
+export SUBSCORE_PATH=\$NAVSIM_EXP_ROOT
+
+cd \$NAVSIM_DEVKIT_ROOT
+
+python \$NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py \
+    --config-path \$NAVSIM_DEVKIT_ROOT/my_configs \
+    --config-name author_sim_eval_warmup \
+    'hydra.searchpath=[pkg://navsim.planning.script.config.common,pkg://navsim.planning.script.config.training,pkg://navsim.planning.script.config.pdm_scoring]' \
+    'hydra.output_subdir=null' \
+    'hydra.run.dir=/tmp' \
     experiment_name=$EXPERIMENT \
-    train_ckpt_path=$RESUME_CHECKPOINT \
-    train_test_split=navtrain \
-    cache_path=null \
-    use_cache_without_dataset=false \
-    trainer.params.devices=8 \
-    trainer.params.max_epochs=35 \
-    trainer.params.check_val_every_n_epoch=1 \
-    trainer.params.strategy=ddp \
-    dataloader.params.prefetch_factor=2 \
-    dataloader.params.batch_size=10 \
-    dataloader.params.num_workers=4 \
-    dataloader.params.pin_memory=false \
-    agent.lr_args.name=AdamW \
-    agent.lr_args.base_lr=0.0002 \
-    agent.num_gpus=8 \
-    agent.progress_bar=false \
-    agent.config.refiner_ls_values=0.0 \
-    agent.config.image_backbone.focus_front_cam=false \
-    agent.config.image_backbone.use_hf_dinov2=false \
-    agent.config.one_token_per_traj=true \
-    agent.config.refiner_num_heads=1 \
-    agent.config.tf_d_model=256 \
-    agent.config.tf_d_ffn=1024 \
-    agent.config.area_pred=false \
-    agent.config.agent_pred=false \
-    agent.config.ref_num=4 \
-    agent.config.ray_threads=2 \
-    agent.config.use_adapter=$USE_ADAPTER \
-    agent.config.use_matrix_adapter=false \
-    agent.config.freeze_perception=true \
-    agent.loss.prev_weight=0.0 \
-    seed=2 \
-    $SIM_ARGS
-# $USE_MATRIX_ADAPTER
-    # agent.config.image_backbone.hf_model_name=facebook/dinov2-small \
+    output_dir=$EXP_ROOT/ke/$EXPERIMENT/evaluations/$EVAL_JOB_NAME \
+    agent.checkpoint_path=$CHECKPOINT
+
+
+# TODO
+# This is train_sim_0.1_add:                                                                                                   
+#   [Epoch 30] Data mix summary (all ranks):                                                                                     
+#     real :    12874  (90.9%)                                                                                                   
+#     sim  :     1286  (9.1%)                                                                                                    
+#     total:    14160                                                                                                            
+                                                                                                                               
+#   Compared to sim_0.1_12910:[Epoch 39] Data mix summary (all ranks):                                                           
+#     real :     1280  (50.0%)                                                                                                   
+#     sim  :     1280  (50.0%)                                                                                                   
+#     total:     2560 
+# ● Found it — the two configs use different sim_data_mode, and that's the whole story:
+
+#   sim_0.1_add explicitly sets sim_data_mode: add (my_configs/sim_0.1_add.yaml:5). In run_training_full.py:137-141, "add" mode
+#   keeps train_data completely untouched — it computes n_real but never subsets anything with it (that's the dead # TODO: check 
+#   if my code actually limits by n_target at line 140). So the full real dataset survives (bounded only by max_scenes=12910 from
+#   the base config), and sim is added on top at sim_data_ratio * len(real). Hence 12874 real (≈ max_scenes) + 1286 sim (≈10%) =
+#   14160. This matches its docstring exactly and does respect max_scenes.
+
+#   author_sim_0.1_12910 never sets sim_data_mode at all, so it falls back to the default "balanced" (line 123:
+#   cfg.get("sim_data_mode", "balanced")). Balanced mode (lines 142-147) explicitly subsamples the real data down to n_real = 
+#   min(n_target, len(train_data)) where n_target = int(sim_data_ratio * len(train_data)) — i.e. it throws away nearly everything
+#   and shrinks real to match sim count (≈1280 each way, 2560 total). Bumping max_scenes to 12910 barely matters here: it just
+#   enlarges the candidate pool that gets randomly downsampled back to ~10% anyway.
+
+#   So author_sim_0.1_12910 is the "wrong" one relative to what its name implies. The config is named as if it trains on 12910
+#   real scenes, but because it silently defaults to balanced mode instead of add, it actually only uses ~1280 real scenes per
+#   epoch — the max_scenes: 12910 bump is nearly a no-op for real-data volume. If the intent was "use all 12910 real scenes + 10%
+#   sim on top," that config is missing sim_data_mode: add.

@@ -1,0 +1,9 @@
+defaults:
+  - sim_0.25_add_0.5196_7_8_26
+  - _self_
+
+train_ckpt_path: /fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-07-07/sim_0.25_add/lightning_logs/version_7075374/checkpoints/epoch39-step51910.ckpt
+
+trainer:
+  params:
+    max_epochs: 50

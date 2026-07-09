@@ -32,22 +32,40 @@ cd $NAVSIM_DEVKIT_ROOT
 
 EXPERIMENT=drivoR_nav2
 
+# --------------------------- OPTION: TOGGLE THIS ---------------------------
+# Set BATCH_DATE_DIR to a date folder name (e.g. 2026-07-05) to submit a
+# separate navhard eval job for every run folder inside it (excluding
+# "evaluations"). Leave empty to fall back to the single $CHECKPOINT below.
+BATCH_DATE_DIR="2026-07-07"
+# --------------------------- OPTION: TOGGLE THIS ---------------------------
+
 CHECKPOINT_BASE=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_realonly_training/lightning_logs/version_7021972/checkpoints/epoch39-step62140.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_realonly_training/lightning_logs/version_7021972/checkpoints/best-epoch35-step57888.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_training/lightning_logs/version_7022063/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_training/run_author_training/lightning_logs/version_7022063/checkpoints/best-epoch34-step57965.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/test_rerun_author_sim_0.4238_6_23_26/lightning_logs/version_7029641/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/author_sim_0.4238_6_23_26_lr0.00005/lightning_logs/version_7029713/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/author_sim_0.4238_6_23_26_val/lightning_logs/version_7029714/checkpoints/epoch39-step64420.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/author_sim/author_sim_0.4238_6_23_26_val/lightning_logs/version_7029714/checkpoints/best-epoch35-step59256.ckpt
-# CHECKPOINT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-06-28/author_sim_0.1/lightning_logs/version_7042874/checkpoints/epoch39-step54090.ckpt
-# CHECKPOINT=$CHECKPOINT_BASE/2026-06-29/author_sim_0.1/lightning_logs/version_7045829/checkpoints/epoch39-step54090.ckpt
-# CHECKPOINT=$CHECKPOINT_BASE/2026-06-29/test_data_size_realonly_12910/lightning_logs/version_7045334/checkpoints/epoch39-step53120.ckpt
-# CHECKPOINT=$CHECKPOINT_BASE/2026-06-28/author_sim_0.25/lightning_logs/version_7043949/checkpoints/epoch39-step54090.ckpt
-CHECKPOINT=$CHECKPOINT_BASE/2026-06-30/author_sim_0.1_0.4787_6_29_26_12910/lightning_logs/version_7047943/checkpoints/epoch39-step51830.ckpt
+
+if [ -z "$SLURM_JOB_ID" ] && [ -n "$BATCH_DATE_DIR" ]; then
+    for RUN_DIR in $CHECKPOINT_BASE/$BATCH_DATE_DIR/*/; do
+        RUN_NAME=$(basename "$RUN_DIR")
+        [ "$RUN_NAME" = "evaluations" ] && continue
+
+        CKPT=$(find "$RUN_DIR" -name "epoch*.ckpt" ! -name "best-*" | sort | tail -1)
+        if [ -z "$CKPT" ]; then
+            echo "No last-epoch checkpoint found in $RUN_DIR, skipping."
+            continue
+        fi
+
+        EPOCH=$(basename "$CKPT" .ckpt | cut -d'-' -f1)
+        JOB_NAME=eval_${RUN_NAME}_${EPOCH}
+        sbatch --job-name=$JOB_NAME --export=ALL,CHECKPOINT=$CKPT \
+            --output=$(dirname "$CKPT")/%x.out.%j --error=$(dirname "$CKPT")/%x.out.%j "$SCRIPT_PATH"
+    done
+    exit 0
+fi
+
+: "${CHECKPOINT:=$CHECKPOINT_BASE/2026-07-07/sim_0.1_balanced/lightning_logs/version_7074273/checkpoints/epoch39-step51570.ckpt}"
+#/fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-07-07/sim_0.1_replace/lightning_logs/version_7074272/checkpoints/epoch39-step51830.ckpt
+# /fs/nexus-projects/sim2real/aliu/DrivoR/exp/ke/2026-07-07/sim_0.1_balanced/lightning_logs/version_7074273/checkpoints/epoch39-step51570.ckpt
 
 MODEL_NAME=$(basename $(dirname $(dirname $(dirname $(dirname $CHECKPOINT)))))
+TRAIN_DATE=$(basename $(dirname $(dirname $(dirname $(dirname $(dirname $CHECKPOINT))))))
 EPOCH=$(basename $CHECKPOINT .ckpt | cut -d'-' -f1)
 JOB_NAME=eval_${MODEL_NAME}_${EPOCH}
 
@@ -67,4 +85,5 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score_gpu_v2.py \
     'hydra.output_subdir=null' \
     'hydra.run.dir=/tmp' \
     experiment_name=$EXPERIMENT \
+    output_dir=$CHECKPOINT_BASE/$TRAIN_DATE/evaluations/$JOB_NAME \
     agent.checkpoint_path=$CHECKPOINT

@@ -17,16 +17,17 @@
 #SBATCH --partition=gamma
 
 # --------------------------- UPDATE THIS ---------------------------
-CONFIG_NAME=drivor_v2_debugger
+CONFIG_NAME=sim_0.25_add_debug
 # --------------------------- UPDATE THIS ---------------------------
 
 SCRIPT_PATH=$(readlink -f "$0")
 EXP_ROOT=/fs/nexus-projects/sim2real/aliu/DrivoR/exp
-LOG_DIR=$EXP_ROOT/ke/$(date +%Y-%m-%d)/$CONFIG_NAME/lightning_logs
 
 if [ -z "$SLURM_JOB_ID" ]; then
+    EXPERIMENT=$(date +%Y-%m-%d)
+    LOG_DIR=$EXP_ROOT/ke/$EXPERIMENT/$CONFIG_NAME/lightning_logs
     mkdir -p $LOG_DIR
-    sbatch --job-name=$CONFIG_NAME --output=$LOG_DIR/train_%x.out.%j --error=$LOG_DIR/train_%x.out.%j "$SCRIPT_PATH"
+    sbatch --job-name=$CONFIG_NAME --export=ALL,EXPERIMENT=$EXPERIMENT --output=$LOG_DIR/train_%x.out.%j --error=$LOG_DIR/train_%x.out.%j "$SCRIPT_PATH"
     exit 0
 fi
 
@@ -46,8 +47,6 @@ export PYTHONUNBUFFERED=1
 
 # Change to DrivoR root so relative backbone weight paths in drivoR.yaml resolve correctly
 cd $NAVSIM_DEVKIT_ROOT
-
-EXPERIMENT=$(date +%Y-%m-%d)
 
 # PL's SLURMEnvironment uses SLURM_NTASKS=1 to set world_size=1, ignoring devices:8.
 # Unset it so PL uses its subprocess launcher and respects the devices config.
@@ -73,8 +72,7 @@ EVAL_JOB_NAME=eval_${CONFIG_NAME}_${EPOCH}_wp
 
 sbatch --job-name=$EVAL_JOB_NAME \
        --output=$(dirname $CHECKPOINT)/%x.out.%j \
-       --error=$(dirname $CHECKPOINT)/%x.out.%j
-
+       --error=$(dirname $CHECKPOINT)/%x.out.%j << EOF
 #!/bin/bash
 #SBATCH --mem=120gb
 #SBATCH --gres=gpu:rtxa5000:1
@@ -104,4 +102,6 @@ python \$NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py \
     'hydra.output_subdir=null' \
     'hydra.run.dir=/tmp' \
     experiment_name=$EXPERIMENT \
+    output_dir=$EXP_ROOT/ke/$EXPERIMENT/evaluations/$EVAL_JOB_NAME \
     agent.checkpoint_path=$CHECKPOINT
+EOF

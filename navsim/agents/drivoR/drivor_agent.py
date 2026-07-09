@@ -44,10 +44,15 @@ class LitProgressBar(ProgressBar):
 
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_train_epoch_end(self, pl_module)
+        # get_metrics() triggers .compute() on any metric logged with sync_dist=True
+        # (e.g. train/loss, val/score), which requires a DDP collective that ALL ranks
+        # must join. Must be called unconditionally on every rank -- gating it behind a
+        # rank==0 check here deadlocks ranks 1..N-1 forever (they never join the
+        # collective rank 0 is waiting on), eventually aborting via NCCL watchdog timeout.
+        metrics = self.get_metrics(trainer, pl_module)
         if trainer.global_rank != 0:
             return
         elapsed = time.time() - self._epoch_start_time
-        metrics = self.get_metrics(trainer, pl_module)
         train_metrics = dict()
         val_metrics = dict()
         other_metrics = dict()

@@ -556,6 +556,7 @@ class SceneFilter:
     has_route: bool = True
 
     max_scenes: Optional[int] = None
+    max_samples: Optional[int] = None
     log_names: Optional[List[str]] = None
     tokens: Optional[List[str]] = None
 
