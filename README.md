@@ -368,7 +368,7 @@ python $NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_create_submission_pickle_w
     agent.config.ddc=6 \
     agent.config.ttc=14 \
     agent.config.ep=15 \
-    agent.config.comfort=2.1 \
+    agent.config.comfort=2 \
     agent.loss.prev_weight=0.0 \
     team_name=$TEAM_NAME \
     authors=$AUTHORS \
@@ -380,7 +380,7 @@ and submit the generated *submission.pkl* to https://huggingface.co/spaces/AGC20
 
 ## future work
 
-Due to the compute ressource and time constraints, we did not train on whole simScale dataset although the code is ready for doing so, pull request and further results are welcomed. Please stay tuned.
+Due to the compute resource and time constraints, we did not train on whole simScale dataset although the code is ready for doing so, pull request and further results are welcomed. Please stay tuned.
 
 # BibTeX
 ```
